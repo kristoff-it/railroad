@@ -1,0 +1,17 @@
+.{
+    .name = .railroad,
+    .version = "0.0.1",
+    .dependencies = .{
+        .ziggy = .{
+            .url = "git+https://github.com/kristoff-it/ziggy#7b81a7f1c9e6b22aacd7060b17bb6b7142878cd8",
+            .hash = "ziggy-0.1.0-kTg8vxOeBwCS6RxeI2quMQ7PCnCSWWB3Q-NF-JOktWrN",
+        },
+    },
+    .minimum_zig_version = "0.17.0-dev.857+2b2b85c5f",
+    .fingerprint = 0x612bd1a692efe01b,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

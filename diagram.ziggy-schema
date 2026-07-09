@@ -1,0 +1,96 @@
+$ = {:}Diagram
+
+struct Diagram {
+    body: []Node,
+}
+
+union Node {
+    /// Represents literal text.
+    terminal: bytes,
+    /// Represents an instruction or another production.
+    non_terminal: bytes,
+    /// A comment.
+    commment: bytes,
+    /// An empty line.
+    skip,
+    /// Like concatenation in a regex.
+    sequence: []Node,
+    /// Identical to a Sequence, but the items are stacked vertically
+    /// rather than horizontally.
+    ///
+    /// Best used when a simple Sequence would be too wide; instead, you
+    /// can break the items up into a Stack of Sequences of an appropriate
+    /// width.
+    stack: []Node,
+    /// A Sequence where every item is individually optional, but at least
+    /// one item must be chosen
+    optional_sequence: []Node,
+    /// Like | in a regex.
+    choice: Choice,
+    /// Like `||` or `&&` in a CSS grammar; it's similar to a Choice, but more
+    /// than one branch can be taken.
+    multiple_choice: MultipleChoice,
+    /// Identical to Choice, but the items are stacked horizontally rather
+    /// than vertically. There's no "straight-line" choice, so it just
+    /// takes a list of children. Best used when a simple Choice would be
+    /// too tall; instead, you can break up the items into a
+    /// HorizontalChoice of Choices of an appropriate height.
+    horizontal_choice: []Node,
+    /// Like ? in a regex. A shorthand for Choice(1, Skip(), child).
+    optional: Node,
+    /// Same as .optional, but it instead puts the Skip() in the
+    /// straight-line path, for when the "normal" behavior is to omit the
+    /// item.
+    optional_skip: Node,
+    /// Like `*` in a regex. A shorthand for
+    /// `.optional_skip(.one_or_more(.{ .child = child }))`.
+    zero_or_more: ZeroOrMore,
+    /// Same as `.zero_or_more`, but instead puts the `.skip` in the
+    /// straight-line path, for when the "normal" behavior is to omit the
+    /// item.
+    zero_or_more_skip: ZeroOrMore,
+    /// Like `+` in a regex. The repeat argument is optional, and specifies
+    /// something that must go between the repetitions (usually a
+    /// `.comment`, but sometimes things like `.terminal(",")`, etc.)
+    one_or_more: OneOrMore,
+    /// Highlights its child with a dashed outline, and optionally labels it.
+    group: Group,
+
+    struct Choice {
+        /// Specifies which child is the "normal" choice and should go in
+        /// the middle.
+        index: int,
+        body: []Node,
+    }
+
+    struct MultipleChoice {
+        /// Specifies which child is the "normal" choice and should go in
+        /// the middle.
+        index: int,
+        /// The kind of multiple choice.
+        kind: Kind,
+        body: []Node,
+
+        union Kind {
+            /// All branches must be taken.
+            all,
+            /// A variable number (but at least one) of branches must be taken.
+            one,
+        }
+    }
+
+    struct ZeroOrMore {
+        child: Node,
+        repeat: ?Node,
+    }
+
+    struct OneOrMore {
+        child: Node,
+        repeat: ?Node,
+    }
+
+    struct Group {
+        child: Node,
+        label: ?bytes,
+    }
+}
