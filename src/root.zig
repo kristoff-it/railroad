@@ -34,9 +34,9 @@ pub const Diagram = struct {
 
     pub fn format(d: *const Diagram, w: *Io.Writer) Io.Writer.Error!void {
         // self.width + paddingLeft + paddingRight
-        const view_box_w = d.width + 20 + 20; // + paddingleft + paddingright;
+        const view_box_w = d.width + 20 + 20;
         //self.up + self.height + self.down + paddingTop + paddingBottom
-        const view_box_h = d.up + d.height + d.down + 20 + 20; // + paddingtop + paddingbottom
+        const view_box_h = d.up + d.height + d.down + 20 + 20;
 
         const stroke_odd_pixel_length = true;
         const transform = if (stroke_odd_pixel_length) "translate(.5 .5)" else "";
@@ -57,10 +57,10 @@ pub const Diagram = struct {
                 .{ .m = .{ .x = 10, .y = -20 } },
                 .{ .down = 20 },
                 .{ .m = .{ .x = -10, .y = -10 } },
-                .{ .right = 20 }, // todo
+                .{ .right = 20 }, // padding
             });
             try w.writeAll("</g>\n");
-            x += 20; // todo
+            x += 20; // padding
         }
 
         for (d.body) |n| {
@@ -101,7 +101,7 @@ pub const Diagram = struct {
         fn layout(n: *Node) void {
             const char_width = 8;
             switch (n.raw) {
-                .terminal => |t| {
+                .terminal, .non_terminal => |t| {
                     const flen: f64 = @floatFromInt(t.len);
                     n.width = (flen * char_width) + 20.0;
                     n.up = 11;
@@ -113,7 +113,7 @@ pub const Diagram = struct {
 
         fn renderSvg(n: *const Node, w: *Io.Writer, x: f64, y: f64) Io.Writer.Error!void {
             switch (n.raw) {
-                .terminal => |text| {
+                .terminal, .non_terminal => |text| {
                     try w.writeAll(
                         \\<g class="terminal">
                         \\
@@ -131,8 +131,8 @@ pub const Diagram = struct {
                         y - 11,
                         n.width,
                         n.up + n.down,
-                        10,
-                        10,
+                        if (n.raw == .terminal) 10 else 0,
+                        if (n.raw == .terminal) 10 else 0,
                     );
 
                     try writeText(w, x + gaps[0] + n.width / 2.0, y + 4, text);
@@ -174,6 +174,7 @@ pub const Diagram = struct {
 
 pub const RawNode = union(enum) {
     terminal: []const u8,
+    non_terminal: []const u8,
 };
 
 const PathCmd = union(enum) {
