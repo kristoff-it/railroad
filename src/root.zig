@@ -17,13 +17,19 @@ pub const Diagram = struct {
     };
 
     pub fn layout(d: *Diagram) void {
+        d.width = 20;
+        d.up = 10;
+        d.down = 10;
         for (d.body) |*n| {
             n.layout();
             d.width += n.width;
+            if (n.needs_space) d.width += 20;
             d.up = @max(d.up, n.up - d.height);
             d.height += n.height;
             d.down = @max(d.down - n.height, n.down);
         }
+
+        d.width += 20;
     }
 
     pub fn format(d: *const Diagram, w: *Io.Writer) Io.Writer.Error!void {
@@ -36,13 +42,27 @@ pub const Diagram = struct {
         const transform = if (stroke_odd_pixel_length) "translate(.5 .5)" else "";
 
         try w.print(
-            \\<svg class="railroad-diagram" viewBox="0 0 {} {}">
-            \\<g transform="{s}">
+            \\<svg class="railroad-diagram" width={0} height={1} viewBox="0 0 {0} {1}">
+            \\<g transform="{2s}">
             \\
         , .{ view_box_w, view_box_h, transform });
 
-        var x: f64 = 0;
-        var y: f64 = 0;
+        var x: f64 = 20;
+        var y: f64 = 20;
+        y += d.up;
+        {
+            try w.writeAll("<g>\n");
+            try writePath(w, x, y - 10, &.{
+                .{ .down = 20 },
+                .{ .m = .{ .x = 10, .y = -20 } },
+                .{ .down = 20 },
+                .{ .m = .{ .x = -10, .y = -10 } },
+                .{ .right = 20 }, // todo
+            });
+            try w.writeAll("</g>\n");
+            x += 20; // todo
+        }
+
         for (d.body) |n| {
             if (n.needs_space) {
                 try writePath(w, x, y, &.{
@@ -61,6 +81,10 @@ pub const Diagram = struct {
                 x += 10;
             }
         }
+        try w.print(
+            \\<path d="M{} {} h 20 m -10 -10 v 20 m 10 -20 v 20'" />
+            \\
+        , .{ x, y });
 
         try w.writeAll("</g></svg>\n\n");
     }
@@ -75,11 +99,11 @@ pub const Diagram = struct {
         needs_space: bool = false,
 
         fn layout(n: *Node) void {
-            const char_width = 50.0;
+            const char_width = 8;
             switch (n.raw) {
                 .terminal => |t| {
                     const flen: f64 = @floatFromInt(t.len);
-                    n.width = flen * char_width + 20.0;
+                    n.width = (flen * char_width) + 20.0;
                     n.up = 11;
                     n.down = 11;
                     n.needs_space = true;
@@ -90,6 +114,10 @@ pub const Diagram = struct {
         fn renderSvg(n: *const Node, w: *Io.Writer, x: f64, y: f64) Io.Writer.Error!void {
             switch (n.raw) {
                 .terminal => |text| {
+                    try w.writeAll(
+                        \\<g class="terminal">
+                        \\
+                    );
                     const gaps = determineGaps(n.width, n.width);
                     try writePath(w, x, y, &.{
                         .{ .h = gaps[0] },
@@ -108,6 +136,10 @@ pub const Diagram = struct {
                     );
 
                     try writeText(w, x + gaps[0] + n.width / 2.0, y + 4, text);
+                    try w.writeAll(
+                        \\</g>
+                        \\
+                    );
                 },
             }
         }
@@ -146,6 +178,9 @@ pub const RawNode = union(enum) {
 
 const PathCmd = union(enum) {
     h: f64,
+    m: struct { x: f64, y: f64 },
+    right: f64,
+    down: f64,
 };
 fn writePath(w: *Io.Writer, x: f64, y: f64, cmds: []const PathCmd) Io.Writer.Error!void {
     try w.print(
@@ -154,6 +189,9 @@ fn writePath(w: *Io.Writer, x: f64, y: f64, cmds: []const PathCmd) Io.Writer.Err
 
     for (cmds) |cmd| switch (cmd) {
         .h => |h| try w.print(" h{}", .{h}),
+        .m => |m| try w.print(" m{} {}", .{ m.x, m.y }),
+        .right => |r| try w.print("h{}", .{@max(0, r)}),
+        .down => |d| try w.print("v{}", .{@max(0, d)}),
     };
 
     try w.writeAll(
