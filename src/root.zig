@@ -4,6 +4,12 @@ const ziggy = @import("ziggy");
 const Tokenizer = ziggy.Tokenizer;
 const Deserializer = ziggy.Deserializer;
 
+// VS: 8, // minimum vertical separation between things. For a 3px stroke, must be at least 4
+// AR: 10, // radius of arcs
+const vs: f64 = 8;
+const ar: f64 = 10;
+const padding: f64 = 20;
+
 pub const Diagram = struct {
     body: []Node,
 
@@ -17,26 +23,26 @@ pub const Diagram = struct {
     };
 
     pub fn layout(d: *Diagram) void {
-        d.width = 20;
+        d.width = padding;
         d.up = 10;
         d.down = 10;
         for (d.body) |*n| {
             n.layout();
             d.width += n.width;
-            if (n.needs_space) d.width += 20;
+            if (n.needs_space) d.width += padding;
             d.up = @max(d.up, n.up - d.height);
             d.height += n.height;
             d.down = @max(d.down - n.height, n.down);
         }
 
-        d.width += 20;
+        d.width += padding;
     }
 
     pub fn format(d: *const Diagram, w: *Io.Writer) Io.Writer.Error!void {
         // self.width + paddingLeft + paddingRight
-        const view_box_w = d.width + 20 + 20;
+        const view_box_w = d.width + padding + padding;
         //self.up + self.height + self.down + paddingTop + paddingBottom
-        const view_box_h = d.up + d.height + d.down + 20 + 20;
+        const view_box_h = d.up + d.height + d.down + padding + padding;
 
         const stroke_odd_pixel_length = true;
         const transform = if (stroke_odd_pixel_length) "translate(.5 .5)" else "";
@@ -47,8 +53,8 @@ pub const Diagram = struct {
             \\
         , .{ view_box_w, view_box_h, transform });
 
-        var x: f64 = 20;
-        var y: f64 = 20;
+        var x: f64 = padding;
+        var y: f64 = padding;
         y += d.up;
         {
             try w.writeAll("<g>\n");
@@ -57,10 +63,10 @@ pub const Diagram = struct {
                 .{ .m = .{ .x = 10, .y = -20 } },
                 .{ .down = 20 },
                 .{ .m = .{ .x = -10, .y = -10 } },
-                .{ .right = 20 }, // padding
+                .{ .right = padding },
             });
             try w.writeAll("</g>\n");
-            x += 20; // padding
+            x += padding;
         }
 
         for (d.body) |n| {
@@ -70,7 +76,7 @@ pub const Diagram = struct {
                 });
                 x += 10;
             }
-            try n.renderSvg(w, x, y);
+            try n.renderSvg(w, x, y, n.width);
             x += n.width;
             y += n.height;
 
@@ -99,26 +105,52 @@ pub const Diagram = struct {
         needs_space: bool = false,
 
         fn layout(n: *Node) void {
-            const char_width = 8;
+            const term_char_width = 8;
+            const comment_char_width = 7;
             switch (n.raw) {
                 .terminal, .non_terminal => |t| {
                     const flen: f64 = @floatFromInt(t.len);
-                    n.width = (flen * char_width) + 20.0;
+                    n.width = (flen * term_char_width) + padding;
                     n.up = 11;
                     n.down = 11;
                     n.needs_space = true;
                 },
+                .comment => |c| {
+                    const flen: f64 = @floatFromInt(c.len);
+                    n.width = (flen * comment_char_width) + padding;
+                    n.up = 8;
+                    n.down = 8;
+                    n.needs_space = true;
+                },
+                .skip => {},
+                .stack => |items| {
+                    for (items, 0..) |*item, idx| {
+                        item.layout();
+                        n.width = @max(n.width, item.width + if (item.needs_space) padding else 0);
+                        n.height += item.height;
+                        if (idx > 0) {
+                            n.height += @max(ar * 2, item.up + vs);
+                        }
+                        if (idx < items.len - 1) {
+                            n.height += @max(ar * 2, item.down + vs);
+                        }
+                    }
+
+                    n.needs_space = true;
+                    n.up = items[0].up;
+                    n.down = items[items.len - 1].down;
+                },
             }
         }
 
-        fn renderSvg(n: *const Node, w: *Io.Writer, x: f64, y: f64) Io.Writer.Error!void {
+        fn renderSvg(n: *const Node, w: *Io.Writer, x: f64, y: f64, width: f64) Io.Writer.Error!void {
             switch (n.raw) {
                 .terminal, .non_terminal => |text| {
                     try w.writeAll(
                         \\<g class="terminal">
                         \\
                     );
-                    const gaps = determineGaps(n.width, n.width);
+                    const gaps = determineGaps(width, n.width);
                     try writePath(w, x, y, &.{
                         .{ .h = gaps[0] },
                     });
@@ -135,11 +167,73 @@ pub const Diagram = struct {
                         if (n.raw == .terminal) 10 else 0,
                     );
 
-                    try writeText(w, x + gaps[0] + n.width / 2.0, y + 4, text);
+                    try writeText(w, x + gaps[0] + n.width / 2.0, y + 4, text, .{});
                     try w.writeAll(
                         \\</g>
                         \\
                     );
+                },
+                .comment => |text| {
+                    try w.writeAll(
+                        \\<g class="comment">
+                        \\
+                    );
+                    const gaps = determineGaps(width, n.width);
+                    try writePath(w, x, y, &.{
+                        .{ .h = gaps[0] },
+                    });
+                    try writePath(w, x + gaps[0] + n.width, y + n.height, &.{
+                        .{ .h = gaps[1] },
+                    });
+                    try writeText(w, x + n.width / 2.0, y + 5, text, .{
+                        .class = "comment",
+                    });
+                    try w.writeAll(
+                        \\</g>
+                        \\
+                    );
+                },
+                .skip => {
+                    try writePath(w, x, y, &.{
+                        .{ .right = n.width },
+                    });
+                },
+                .stack => |items| {
+                    try w.writeAll("<g>");
+                    const gaps = determineGaps(width, n.width);
+                    try writePath(w, x, y, &.{.{ .h = gaps[0] }});
+                    var mut_x = x;
+                    mut_x += gaps[0];
+                    if (items.len > 1) {
+                        try writePath(w, mut_x, y, &.{.{ .h = ar }});
+                        mut_x += ar;
+                    }
+
+                    var mut_y = y;
+                    for (items, 0..) |item, idx| {
+                        const inner_width: f64 = n.width - if (items.len > 1) ar * 2 else 0.0;
+                        try item.renderSvg(w, mut_x, mut_y, inner_width);
+                        mut_x += inner_width;
+                        mut_y += item.height;
+
+                        if (idx < items.len - 1) {
+                            try writePath(w, mut_x, mut_y, &.{
+                                .{ .arc = .{ .n, .e } }, .{ .down = @max(0, item.down + vs - ar * 2) },
+                                .{ .arc = .{ .e, .s } }, .{ .left = inner_width },
+                                .{ .arc = .{ .n, .w } }, .{ .down = @max(0, items[idx + 1].up + vs - ar * 2) },
+                                .{ .arc = .{ .w, .s } },
+                            });
+
+                            mut_y += @max(item.down + vs, ar * 2) + @max(items[idx + 1].up + vs, ar * 2);
+                            mut_x = x + ar;
+                        }
+                    }
+
+                    if (items.len > 1) {
+                        try writePath(w, mut_x, mut_y, &.{.{ .h = ar }});
+                    }
+
+                    try w.writeAll("</g>");
                 },
             }
         }
@@ -175,14 +269,27 @@ pub const Diagram = struct {
 pub const RawNode = union(enum) {
     terminal: []const u8,
     non_terminal: []const u8,
+    comment: []const u8,
+    skip,
+    stack: []Diagram.Node,
 };
 
 const PathCmd = union(enum) {
     h: f64,
     m: struct { x: f64, y: f64 },
     right: f64,
+    left: f64,
     down: f64,
+    up: f64,
+    arc: [2]Sweep,
+
+    pub const Sweep = enum { n, s, w, e };
 };
+
+fn eq(lhs: [2]PathCmd.Sweep, rhs: [2]PathCmd.Sweep) bool {
+    return lhs[0] == rhs[0] and lhs[1] == rhs[1];
+}
+
 fn writePath(w: *Io.Writer, x: f64, y: f64, cmds: []const PathCmd) Io.Writer.Error!void {
     try w.print(
         \\<path d="M{} {}
@@ -192,7 +299,24 @@ fn writePath(w: *Io.Writer, x: f64, y: f64, cmds: []const PathCmd) Io.Writer.Err
         .h => |h| try w.print(" h{}", .{h}),
         .m => |m| try w.print(" m{} {}", .{ m.x, m.y }),
         .right => |r| try w.print("h{}", .{@max(0, r)}),
+        .left => |l| try w.print("h{}", .{-@max(0, l)}),
         .down => |d| try w.print("v{}", .{@max(0, d)}),
+        .up => |u| try w.print("v{}", .{-@max(0, u)}),
+        .arc => |sweep| {
+            const arc_x: f64 = if (sweep[0] == .e or sweep[1] == .w) -ar else ar;
+            const arc_y: f64 = if (sweep[0] == .s or sweep[1] == .n) -ar else ar;
+
+            const cw: u8 = @intFromBool(
+                eq(sweep, .{ .n, .e }) or
+                    eq(sweep, .{ .e, .s }) or
+                    eq(sweep, .{ .s, .w }) or
+                    eq(sweep, .{ .w, .n }),
+            );
+
+            try w.print("a {} {} 0 0 {} {} {}", .{
+                ar, ar, cw, arc_x, arc_y,
+            });
+        },
     };
 
     try w.writeAll(
@@ -201,11 +325,27 @@ fn writePath(w: *Io.Writer, x: f64, y: f64, cmds: []const PathCmd) Io.Writer.Err
     );
 }
 
-fn writeText(w: *Io.Writer, x: f64, y: f64, text: []const u8) Io.Writer.Error!void {
+fn writeText(
+    w: *Io.Writer,
+    x: f64,
+    y: f64,
+    text: []const u8,
+    opts: struct {
+        class: ?[]const u8 = null,
+    },
+) Io.Writer.Error!void {
     try w.print(
-        \\<text x="{}" y="{}">{s}</text>
+        \\<text x="{}" y="{}"
+    , .{ x, y });
+    if (opts.class) |c| {
+        try w.print(
+            \\ class="{s}"
+        , .{c});
+    }
+    try w.print(
+        \\>{s}</text>
         \\
-    , .{ x, y, text });
+    , .{text});
 }
 
 fn writeRect(
