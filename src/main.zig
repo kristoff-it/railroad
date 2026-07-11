@@ -29,8 +29,10 @@ pub fn main(init: std.process.Init) !void {
         std.process.fatal("{f}", .{meta.reportErrorsFmt(arena, .{}, file_path, src, err)});
     };
 
-    diagrams.fields.values()[0].layout();
-    std.debug.print(
+    var out_writer = Io.File.stdout().writerStreaming(io, &.{});
+    const w = &out_writer.interface;
+
+    try w.print(
         \\
         \\<html>
         \\<head>
@@ -39,13 +41,19 @@ pub fn main(init: std.process.Init) !void {
         \\</style>
         \\</head>
         \\<body>
-        \\{f}
+    , .{css});
+
+    for (diagrams.fields.keys(), diagrams.fields.values()) |k, *d| {
+        try d.layout();
+        try w.print("<h2>{s}</h2>\n{f}\n", .{ k, d });
+    }
+
+    try w.print(
         \\</body>
         \\</html>
-    , .{
-        css,
-        diagrams.fields.values()[0],
-    });
+        \\
+        \\
+    , .{});
 }
 
 const css =

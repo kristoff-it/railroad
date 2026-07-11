@@ -1,7 +1,21 @@
 $ = {:}Diagram
 
 struct Diagram {
+    delimiters: ?Delimiters,
+    label: ?bytes,
+    alignment: ?Alignment,
     body: []Node,
+
+    union Delimiters {
+        pipes,
+        directional,
+    }
+
+    union Alignment {
+        left,
+        center,
+        right,
+    }
 }
 
 union Node {
@@ -9,8 +23,12 @@ union Node {
     terminal: bytes,
     /// Represents an instruction or another production.
     non_terminal: bytes,
+    /// Same as `non_terminal`, but it also includes a small label on top,
+    /// useful for lightweight notation of a single node. See `group` for
+    /// giving a label to a group of nodes.
+    label: Label,
     /// A comment.
-    commment: bytes,
+    comment: bytes,
     /// An empty line.
     skip,
     /// Like concatenation in a regex.
@@ -24,31 +42,31 @@ union Node {
     stack: []Node,
     /// A Sequence where every item is individually optional, but at least
     /// one item must be chosen
-    optional_sequence: []Node,
-    /// Like | in a regex.
-    choice: Choice,
-    /// Like `||` or `&&` in a CSS grammar; it's similar to a Choice, but more
-    /// than one branch can be taken.
-    multiple_choice: MultipleChoice,
+    ///optional_sequence: []Node,
+    /// Like | in a regex, puts the first item to the straight line.
+    choice: []Node,
+    /// Same as `choice` but it puts the center element in the straight line.
+    /// Requires an odd number of items, use `choice_index` when dealing with
+    /// an even number.
+    choice_middle: []Node,
+    /// Same as 'choice', but it puts the last element on the straight line.
+    /// Use `choice_index` for more fine-grained control over element positioning.
+    choice_last: []Node,
     /// Identical to Choice, but the items are stacked horizontally rather
     /// than vertically. There's no "straight-line" choice, so it just
     /// takes a list of children. Best used when a simple Choice would be
     /// too tall; instead, you can break up the items into a
     /// HorizontalChoice of Choices of an appropriate height.
-    horizontal_choice: []Node,
-    /// Like ? in a regex. A shorthand for Choice(1, Skip(), child).
-    optional: Node,
-    /// Same as .optional, but it instead puts the Skip() in the
-    /// straight-line path, for when the "normal" behavior is to omit the
-    /// item.
-    optional_skip: Node,
-    /// Like `*` in a regex. A shorthand for
-    /// `.optional_skip(.one_or_more(.{ .child = child }))`.
-    zero_or_more: ZeroOrMore,
-    /// Same as `.zero_or_more`, but instead puts the `.skip` in the
-    /// straight-line path, for when the "normal" behavior is to omit the
-    /// item.
-    zero_or_more_skip: ZeroOrMore,
+    choice_horizontal: []Node,
+    /// Like | in a regex, takes an index for more fine-grainded control
+    /// of item positioning.
+    choice_index: ChoiceIndex,
+    /// Like `||` in a CSS grammar; it's similar to a `choice_index`, but more
+    /// than one branch can be taken.
+    multiple_choice_any: ChoiceIndex,
+    /// Like `&&` in a CSS grammar; it's similar to a `choice_index`, but all
+    /// branches must be taken at least once.
+    multiple_choice_all: ChoiceIndex,
     /// Like `+` in a regex. The repeat argument is optional, and specifies
     /// something that must go between the repetitions (usually a
     /// `.comment`, but sometimes things like `.terminal(",")`, etc.)
@@ -56,41 +74,30 @@ union Node {
     /// Highlights its child with a dashed outline, and optionally labels it.
     group: Group,
 
-    struct Choice {
-        /// Specifies which child is the "normal" choice and should go in
-        /// the middle.
-        index: int,
-        body: []Node,
+    struct Label {
+        label: bytes,
+        item: Node,
     }
 
-    struct MultipleChoice {
+    struct ChoiceIndex {
         /// Specifies which child is the "normal" choice and should go in
         /// the middle.
         index: int,
-        /// The kind of multiple choice.
-        kind: Kind,
-        body: []Node,
-
-        union Kind {
-            /// All branches must be taken.
-            all,
-            /// A variable number (but at least one) of branches must be taken.
-            one,
-        }
+        items: []Node,
     }
 
     struct ZeroOrMore {
-        child: Node,
+        item: Node,
         repeat: ?Node,
     }
 
     struct OneOrMore {
-        child: Node,
+        item: Node,
         repeat: ?Node,
     }
 
     struct Group {
-        child: Node,
         label: ?bytes,
+        item: Node,
     }
 }
