@@ -17,6 +17,7 @@ pub fn build(b: *std.Build) void {
 
     mod.addImport("ziggy", ziggy_mod);
 
+    // const nightwatch = b.dependency("nightwatch", .{});
     const exe = b.addExecutable(.{
         .name = "railroad",
         .root_module = b.createModule(.{
@@ -26,6 +27,10 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "railroad", .module = mod },
                 .{ .name = "ziggy", .module = ziggy_mod },
+                // .{
+                //     .name = "nightwatch",
+                //     .module = nightwatch.module("nightwatch"),
+                // },
             },
         }),
     });

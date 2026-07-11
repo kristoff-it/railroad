@@ -84,7 +84,20 @@ pub const Diagram = struct {
         d.width += padding;
     }
 
-    pub fn format(d: *const Diagram, w: *Io.Writer) Io.Writer.Error!void {
+    pub const Fmt = struct {
+        css: ?[]const u8,
+        d: *const Diagram,
+
+        pub fn format(f: Fmt, w: *Io.Writer) Io.Writer.Error!void {
+            try f.d.renderSvg(f.css, w);
+        }
+    };
+
+    pub fn fmt(d: *const Diagram, embed_css: ?[]const u8) Fmt {
+        return .{ .css = embed_css, .d = d };
+    }
+
+    pub fn renderSvg(d: *const Diagram, embed_css: ?[]const u8, w: *Io.Writer) Io.Writer.Error!void {
         // self.width + paddingLeft + paddingRight
         const view_box_w = d.width + padding + padding;
         //self.up + self.height + self.down + paddingTop + paddingBottom
@@ -94,10 +107,11 @@ pub const Diagram = struct {
         const transform = if (stroke_odd_pixel_length) "translate(.5 .5)" else "";
 
         try w.print(
-            \\<svg class="railroad-diagram" viewBox="0 0 {0} {1}">
-            \\<g transform="{2s}">
+            \\<svg class="railroad-diagram" viewBox="0 0 {0} {1}" xmlns="http://www.w3.org/2000/svg">
+            \\{2s}
+            \\<g transform="{3s}">
             \\
-        , .{ view_box_w, view_box_h, transform });
+        , .{ view_box_w, view_box_h, embed_css orelse "", transform });
 
         var x: f64 = padding;
         var y: f64 = padding;
@@ -592,6 +606,10 @@ pub const Diagram = struct {
                             x += 10;
                         }
                     }
+                    try w.writeAll(
+                        \\</g>
+                        \\
+                    );
                 },
                 .stack => |items| {
                     try w.writeAll(
