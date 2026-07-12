@@ -1,0 +1,21 @@
+.diagram-title-block {
+    display: flex;
+    flex-directon: row;
+  margin-top: 20pt;
+}
+
+.diagram-title {
+  background-color: hsl(120,50%,80%);
+  color: black;
+  padding: 5px 15px;
+  display: inline-block;
+  border-radius: 10px 10px 0 0;
+  font-family: monospace;
+  font-size: 13pt;
+  font-weight: bold;
+}
+
+
+svg {
+    border: 2px solid hsl(120, 50%, 70%);
+}

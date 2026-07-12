@@ -17,7 +17,19 @@ pub fn build(b: *std.Build) void {
 
     mod.addImport("ziggy", ziggy_mod);
 
-    // const nightwatch = b.dependency("nightwatch", .{});
+    const schema_mod = b.createModule(.{
+        .root_source_file = b.path(".ziggy-schema"),
+    });
+
+    const ziggy_ziggy_mod = b.createModule(.{
+        .root_source_file = b.path("ziggy.ziggy"),
+    });
+
+    const nightwatch = b.dependency("nightwatch", .{
+        .target = target,
+        .optimize = optimize,
+        .macos_fsevents = true,
+    });
     const exe = b.addExecutable(.{
         .name = "railroad",
         .root_module = b.createModule(.{
@@ -27,10 +39,12 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "railroad", .module = mod },
                 .{ .name = "ziggy", .module = ziggy_mod },
-                // .{
-                //     .name = "nightwatch",
-                //     .module = nightwatch.module("nightwatch"),
-                // },
+                .{ .name = ".ziggy-schema", .module = schema_mod },
+                .{ .name = "ziggy.ziggy", .module = ziggy_ziggy_mod },
+                .{
+                    .name = "nightwatch",
+                    .module = nightwatch.module("nightwatch"),
+                },
             },
         }),
     });

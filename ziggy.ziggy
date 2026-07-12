@@ -1,3 +1,27 @@
+// Railroad diagram definion for the Ziggy Document language.
+//
+// Run `railroad build ziggy.ziggy --html` to generate the railroad
+// diagrams. You will find the output in 'diagrams/diagrams.html'.
+//
+// This file is provided both as an example of some railroad diagram
+// defintions, and as an aid to get used to Ziggy Document syntax.
+//
+// It is recommended to install the Ziggy Language Server in order
+// to get diagnostics, autocomplete and goto definition for Ziggy
+// Documents.
+//
+// Run `railroad install-schema` to install a copy of the Ziggy
+// Schema that describes a valid Ziggy Document for defining
+// railroad diagrams. The Ziggy Schema file will be automatically
+// picked up by the Ziggy Language Server for all Ziggy Document
+// files in the directory subtree.
+//
+// Note that if you're accessing this file directly from the
+// railroad repository, then the schema file will already be present
+// in the root directory of the repository.
+//
+// Go to https://ziggy-lang.io to learn more about Ziggy.
+//
 {
     "document": .{
         .delimiters = .pipes,
@@ -63,11 +87,24 @@
                             .choice_last([
                                 .sequence([
                                     .label(.{
+                                        .label = "hex",
+                                        .item = .terminal("x"),
+                                    }),
+                                    .one_or_more(.{
+                                        .item = .label(.{
+                                            .label = "hex digits",
+                                            .item = .non_terminal("[0-9a-fA-F]"),
+                                        }),
+                                        .repeat = .choice([.skip, .terminal("_")]),
+                                    }),
+                                ]),
+                                .sequence([
+                                    .label(.{
                                         .label = "oct",
                                         .item = .terminal("o"),
                                     }),
                                     .one_or_more(.{
-                                        .item = .non_terminal("[0-7]"),
+                                        .item = .non_terminal("   [0-7]   "),
                                         .repeat = .choice([.skip, .terminal("_")]),
                                     }),
                                 ]),
@@ -77,17 +114,7 @@
                                         .item = .terminal("b"),
                                     }),
                                     .one_or_more(.{
-                                        .item = .non_terminal("[01]"),
-                                        .repeat = .choice([.skip, .terminal("_")]),
-                                    }),
-                                ]),
-                                .sequence([
-                                    .label(.{
-                                        .label = "hex",
-                                        .item = .terminal("x"),
-                                    }),
-                                    .one_or_more(.{
-                                        .item = .non_terminal("[0-9a-fA-F]"),
+                                        .item = .non_terminal("   [0-1]   "),
                                         .repeat = .choice([.skip, .terminal("_")]),
                                     }),
                                 ]),
@@ -128,13 +155,15 @@
                             .terminal("0"),
                             .sequence([
                                 .non_terminal("[1-9]"),
-                                .choice([.skip, .terminal("_")]),
                                 .choice_last([
                                     .skip,
-                                    .one_or_more(.{
-                                        .item = .non_terminal("[0-9]"),
-                                        .repeat = .choice([.skip, .terminal("_")]),
-                                    }),
+                                    .sequence([
+                                        .choice([.skip, .terminal("_")]),
+                                        .one_or_more(.{
+                                            .item = .non_terminal("[0-9]"),
+                                            .repeat = .choice([.skip, .terminal("_")]),
+                                        }),
+                                    ]),
                                 ]),
                             ]),
                         ]),
@@ -190,8 +219,8 @@
                         .label = "no whitespace",
                         .item = .sequence([
                             .terminal("\\\\"),
-                            .non_terminal("unicode-printable"),
-                            .non_terminal("\\n"),
+                            .non_terminal("printable unicode"),
+                            .non_terminal("[\\n]"),
                         ]),
                     }),
                 }),
@@ -208,7 +237,7 @@
                         .skip,
                         .one_or_more(.{
                             .item = .choice([
-                                .non_terminal("unicode-printable-unescaped"),
+                                .non_terminal(" printable unicode except \" and \\ "),
                                 .sequence([
                                     .terminal("\\"),
                                     .choice([
@@ -226,12 +255,12 @@
                                         ]),
                                         .choice([
                                             .sequence([
-                                                .terminal("u"),
-                                                .non_terminal("4 hex digits"),
-                                            ]),
-                                            .sequence([
                                                 .terminal("x"),
                                                 .non_terminal("2 hex digits"),
+                                            ]),
+                                            .sequence([
+                                                .terminal("u"),
+                                                .non_terminal("4 hex digits"),
                                             ]),
                                         ]),
                                     ]),
@@ -409,8 +438,8 @@
                 .label = "no whitespace",
                 .item = .sequence([
                     .terminal("//"),
-                    .non_terminal("unicode"),
-                    .non_terminal("\\n"),
+                    .non_terminal("printable unicode"),
+                    .non_terminal("[\\n]"),
                 ]),
             }),
         ],

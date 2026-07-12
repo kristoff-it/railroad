@@ -402,8 +402,6 @@ pub const Diagram = struct {
                     // Always exits at entrance height
                     n.height = 0;
 
-                    std.debug.print("first.down = {}, last.down = {}\n", .{ first.down, last.down });
-
                     // All but the last have a track running above them
                     const all_but_last_max_up = blk: {
                         var ablu: f64 = 0;
@@ -436,7 +434,6 @@ pub const Diagram = struct {
                     };
 
                     n.down = @max(lower_track, first.height + first.down);
-                    std.debug.print("lower track = {}\n", .{n.down});
                 },
                 .one_or_more => |oom| {
                     try oom.item.layout();
@@ -499,10 +496,10 @@ pub const Diagram = struct {
                     .choice_index = .{ .index = items.len - 1, .items = items },
                 },
                 .terminal, .non_terminal => |text| {
-                    try w.writeAll(
-                        \\<g class="terminal">
+                    try w.print(
+                        \\<g class="{s}">
                         \\
-                    );
+                    , .{if (n.raw == .terminal) "terminal" else "non-terminal"});
                     const gaps = determineGaps(width, n.width, alignment);
                     try writePath(w, orig_x, orig_y, &.{
                         .{ .h = gaps[0] },
@@ -918,7 +915,7 @@ pub const Diagram = struct {
                         break :blk us;
                     } + if (last.height > 0) ar else 0;
 
-                    const lower_start = orig_x + ar + first.width + ar * 2 + if (first.needs_space) tof64(20) else 0;
+                    const lower_start = x + ar + first.width + ar * 2 + if (first.needs_space) tof64(20) else 0;
 
                     try writePath(w, lower_start, orig_y + lower_track, &.{
                         .{ .h = lower_span },
