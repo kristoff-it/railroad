@@ -11,6 +11,8 @@ const railroad = @import("railroad");
 const fatal = @import("../fatal.zig");
 const html = @import("../html.zig");
 
+const live_js = @embedFile("live.js");
+const html_css = @embedFile("../html.css");
 const default_style = @embedFile("../default.css");
 const schema = @embedFile(".ziggy-schema");
 const ziggy_ziggy = @embedFile("ziggy.ziggy");
@@ -141,14 +143,20 @@ fn broadcastWebsockets(
 
         switch (event) {
             .changed_input => |src| {
+                var body: Io.Writer.Allocating = .init(gpa);
+                defer body.deinit();
+                const w = &body.writer;
+                w.writeAll("BODY\n") catch fatal.oom();
+
                 build_lock.lock(io) catch break;
                 {
                     defer build_lock.unlock(io);
                     build.rebuildDiagrams(gpa, src);
+                    build.render(w) catch fatal.oom();
                 }
 
                 for (websockets.values()) |*conn| {
-                    conn.writeMessage("RELOAD\n", .text) catch |err| {
+                    conn.writeMessage(body.written(), .text) catch |err| {
                         std.log.debug(
                             "error writing to ws: {s}",
                             .{@errorName(err)},
@@ -318,21 +326,29 @@ const Server = struct {
         const path = req.head.target;
 
         if (eql(u8, path, "/")) {
-            // serve page
-            try s.build_lock.lockShared(s.io);
-            defer s.build_lock.unlockShared(s.io);
-
-            var buf: [4096]u8 = undefined;
-            var body_writer = try req.respondStreaming(&buf, .{
-                .respond_options = .{
-                    .extra_headers = &.{
-                        .{ .name = "content-type", .value = "text/html" },
-                    },
+            // serve the shell page
+            try req.respond(
+                \\<!DOCTYPE html>
+                \\<html>
+                \\<head>
+                \\<script>
+            ++ live_js ++
+                \\</script>
+                \\<style>
+            ++ html_css ++
+                \\</style>
+                \\<style id="__railroad_css">
+                \\</style>
+                \\</head>
+                \\<body>
+                \\Waiting for websocket to connect...
+                \\</body>
+                \\</html>
+            , .{
+                .extra_headers = &.{
+                    .{ .name = "content-type", .value = "text/html" },
                 },
             });
-
-            try s.build.render(&body_writer.writer);
-            try body_writer.end();
         } else if (eql(u8, path, "/ws")) {
             // handle websocket
             s.handleWebsocket(req);
@@ -357,7 +373,20 @@ const Server = struct {
         };
 
         var ws = req.respondWebSocket(.{ .key = wsup }) catch return;
-        ws.flush() catch return;
+
+        var body: Io.Writer.Allocating = .init(s.gpa);
+        defer body.deinit();
+
+        const w = &body.writer;
+        w.writeAll("BODY\n") catch fatal.oom();
+        s.build_lock.lock(s.io) catch return;
+        {
+            defer s.build_lock.unlock(s.io);
+            var css_msg: [2][]const u8 = .{ "CSS\n", s.build.css_src };
+            ws.writeMessageVecUnflushed(&css_msg, .text) catch return;
+            s.build.render(w) catch fatal.oom();
+        }
+        ws.writeMessage(body.written(), .text) catch return;
 
         s.channel.putOne(s.io, .{ .connect = ws }) catch return;
 
@@ -433,7 +462,7 @@ const Build = struct {
     }
 
     fn render(b: *Build, w: *Io.Writer) !void {
-        if (b.diagrams) |*ds| try html.render(&ds.value, b.css_src, true, w) else |err| {
+        if (b.diagrams) |*ds| try html.renderBody(&ds.value, w) else |err| {
             // error
             std.debug.panic("TODO: handle diagram errors {t}", .{err});
         }

@@ -155,7 +155,7 @@ fn build(io: Io, arena: Allocator, args: []const []const u8) void {
             var file_writer = file.writer(io, &file_writer_buf);
             const w = &file_writer.interface;
 
-            html.render(&diagrams, css_src, false, w) catch |err| fatalErr(
+            html.render(&diagrams, css_src, w) catch |err| fatalErr(
                 "error writing to '{s}': {t}",
                 .{ html_name, err },
             );

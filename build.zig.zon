@@ -7,8 +7,8 @@
             .hash = "ziggy-0.1.0-kTg8v8SjBwAsJf_JJy-oxhi4OV_2Z652lD6IJ5KEmYW1",
         },
         .nightwatch = .{
-            .url = "git+https://github.com/kristoff-it/nightwatch?ref=fixes#8a31cbfcc48fdbf84d3591f65b54c9d380119724",
-            .hash = "nightwatch-1.0.0-uXzeHx-gAgAo8UA-haergJaJhFlg-O4WxcSkSSaN5wHn",
+            .url = "git+https://github.com/kristoff-it/nightwatch?ref=fixes#df1514abb07efdc075ed31e38035720234386616",
+            .hash = "nightwatch-1.0.0-uXzeH0OgAgAEpKcxME4HDU4PSaMNQ3l79PtqY-U0h7cm",
         },
     },
     .minimum_zig_version = "0.17.0-dev.857+2b2b85c5f",
