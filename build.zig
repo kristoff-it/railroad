@@ -26,11 +26,17 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("example.ziggy"),
     });
 
-    const nightwatch = b.dependency("nightwatch", .{
-        .target = target,
-        .optimize = optimize,
-        .macos_fsevents = true,
-    });
+    const nightwatch = if (target.result.os.tag == .macos)
+        b.dependency("nightwatch", .{
+            .target = target,
+            .optimize = optimize,
+            .macos_fsevents = true,
+        })
+    else
+        b.dependency("nightwatch", .{
+            .target = target,
+            .optimize = optimize,
+        });
     const nightwatch_mod = nightwatch.module("nightwatch");
 
     const options = b.addOptions();
