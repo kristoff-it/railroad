@@ -1,21 +1,167 @@
-.diagram-title-block {
-    display: flex;
-    flex-directon: row;
-  margin-top: 20pt;
+body { max-width: 1000px; margin: auto; padding: 0 15px; }
+
+code[type="application/ziggy"] {
+  --light-yellow: #e5c07b;
+  --dark-yellow: #d19a66;
+  --blue: #61afef;
+  --cyan: #56b6c2;
+  --light-red: #e06c75;
+  --dark-red: #be5046;
+  --comment-gray: #5c6370;
+  --magenta: #c678dd;
+
+  font-size: 10pt;
+  color: var(--cyan);
+
+  z-p {}
+  z-i { color: var(--blue); }
+  z-b { color: var(--light-yellow); }
+  z-l { color: var(--cyan); font-weight: bold; }
+  z-c { color: var(--grey); font-style: italic; }
+  z-s { color: var(--green); }
+  z-n { color: var(--light-red); font-weight: bold; }
+  z-e { color: var(--light-yellow); font-weight: bold; }
+  z-n { font-weight: bold; }
 }
 
-.diagram-title {
-  background-color: hsl(120,50%,80%);
+
+.tabbed-content {
+  margin: 50px 0;
+}
+
+.tabs {
+  display: flex;
+  margin: 0;
+  padding: 0;
+}
+
+.tabs li {
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  height: 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
   color: black;
   padding: 5px 15px;
-  display: inline-block;
-  border-radius: 10px 10px 0 0;
   font-family: monospace;
   font-size: 13pt;
-  font-weight: bold;
+  border: 1px solid hsl(120, 50%, 80%);
+  background: #fff;
+}
+
+.tabs > li {
+  border-bottom: 0;
 }
 
 
-svg {
-    border: 2px solid hsl(120, 50%, 70%);
+.tabs li.active {
+  background-color: hsl(120,50%,80%);
+  border: 1px solid  hsl(120,50%,80%);
+}
+
+.tabs .actions {
+  flex-grow: 1;
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 2px;
+  gap: 5px;
+}
+
+.tabs .actions > li {
+  border-bottom: 1px solid hsl(120, 50%, 80%);
+  font-size: 8pt;
+  border-radius: 8px;
+  padding-bottom: 0;
+  position: relative;
+}
+
+.tabs > li:not(.active):hover {
+  background-color: hsl(120,50%,90%);
+  border-bottom: 1px solid hsl(120, 50%, 90%);
+}
+
+.tabs li:not(.active):hover {
+  background-color: hsl(120,50%,90%);
+}
+
+
+.tabs .actions > li > svg {
+  padding-bottom: 2px;
+}
+
+.content {
+  border-top: none;
+  border: 4px solid hsl(120, 50%, 80%);
+}
+
+.content > div {
+  display: none;
+  flex-direction: column;
+  margin: 0;
+}
+
+.content > div.show {
+  display: flex;
+}
+
+.content > div.code {
+  padding: 0 20px;
+  background-color: #222;
+  overflow: auto;
+}
+
+.content h2 {
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+h2.diagram-name {
+  background-color: hsl(120,50%,80%);
+  font-family: monospace;
+  font-size: 25pt;
+  margin:0;
+  padding: 10px;
+}
+
+.diagram-description {
+  background-color: hsl(120, 50%, 85%);
+  padding: 10px;
+  font-family: sans-serif;
+  font-style: italic;
+}
+
+.diagram-description:empty {
+  display: none;
+}
+
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px); /* Above the button */
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none; /* So it doesn't block clicks */
+}
+
+.tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #333;
+}
+
+.tooltip.visible {
+  opacity: 1;
 }

@@ -1,3 +1,4 @@
+const options = @import("options");
 const std = @import("std");
 const eql = std.mem.eql;
 const startsWith = std.mem.startsWith;
@@ -12,35 +13,36 @@ const fatal = @import("fatal.zig");
 const default_style = @embedFile("default.css");
 const schema = @embedFile(".ziggy-schema");
 
-fn fatalHelp() noreturn {
-    std.debug.print(
-        \\Usage: railroad [COMMAND] [OPTIONS]
-        \\
-        \\Render railroad diagrams defined in a Ziggy Document.
-        \\
-        \\Run `railroad install-schema` to see the Ziggy Schema
-        \\for railroad definitions, go to https://ziggy-lang.io
-        \\for more information about Ziggy.
-        \\
-        \\Commands:
-        \\  live            Start the live-reloading web server
-        \\  build           Output diagrams as HTML or SVG files
-        \\  install-schema  Install the railroad Ziggy Schema
-        \\  show-css        Display the default CSS stylesheet
-        \\  help            Show this menu and exit
-        \\
-        \\General options:
-        \\  --help, -h      Print command specific usage and extra options
-        \\
-    , .{});
-    std.process.exit(1);
-}
+const help =
+    \\Usage: railroad [COMMAND] [OPTIONS]
+    \\
+    \\Render railroad diagrams defined in a Ziggy Document.
+    \\
+    \\Run `railroad install-schema` to see the Ziggy Schema
+    \\for railroad definitions. Go to https://ziggy-lang.io
+    \\for more information about Ziggy.
+    \\
+    \\Commands:
+    \\  live            Start the live-reloading web server
+    \\  build           Output diagrams as HTML or SVG files
+    \\  install-schema  Install the railroad Ziggy Schema
+    \\  show-css        Display the default CSS stylesheet
+    \\  version         Print the version number and exit
+    \\  help            Print this menu and exit
+    \\
+    \\General options:
+    \\  --help, -h      Print command specific usage and extra options
+    \\
+;
 
 const Command = enum {
     live,
     build,
     @"install-schema",
     @"show-css",
+    version,
+    @"-v",
+    @"--version",
     help,
     @"-h",
     @"--help",
@@ -52,8 +54,8 @@ pub fn main(init: std.process.Init) !void {
 
     const args = try init.minimal.args.toSlice(arena);
     if (args.len < 2) {
-        std.debug.print("error: missing command\n", .{});
-        fatalHelp();
+        std.debug.print(help, .{});
+        std.process.exit(0);
     }
 
     const command = std.meta.stringToEnum(Command, args[1]) orelse fatalHelp();
@@ -62,52 +64,64 @@ pub fn main(init: std.process.Init) !void {
         .live => @import("main/live.zig").run(io, init.gpa, args[2..]),
         .@"install-schema" => install_schema(io, args[2..]),
         .@"show-css" => show_css(io, args[2..]),
-        .help, .@"--help", .@"-h" => fatalHelp(),
+        .version, .@"--version", .@"-v" => {
+            std.debug.print("{s}\n", .{options.version});
+            std.process.exit(0);
+        },
+        .help, .@"--help", .@"-h" => {
+            std.debug.print(help, .{});
+            std.process.exit(0);
+        },
     } catch fatal.oom();
 }
 
 fn build(io: Io, arena: Allocator, args: []const []const u8) void {
     const cmd: BuildCommand = .init(args);
 
-    const src = Io.Dir.cwd().readFileAllocOptions(
+    const ziggy_src = Io.Dir.cwd().readFileAllocOptions(
         io,
         cmd.input_path,
         arena,
         .limited(ziggy.max_size),
         .of(u8),
         0,
-    ) catch |err| fatalErr("unable to read '{s}': {t}", .{
-        cmd.input_path,
-        err,
-    });
+    ) catch |err| fatal.fileRead(cmd.input_path, err);
 
     const css_src = if (cmd.css) |css_path| Io.Dir.cwd().readFileAlloc(
         io,
         css_path,
         arena,
         .unlimited,
-    ) catch |err| fatalErr(
-        "unable to read '{s}': {t}",
-        .{ css_path, err },
-    ) else default_style;
+    ) catch |err| fatal.fileRead(css_path, err) else default_style;
 
     var meta: ziggy.Deserializer.Meta = .init;
-    var diagrams = ziggy.deserializeLeaky(ziggy.Dictionary(railroad.Diagram), arena, src, &meta, .{}) catch |err| {
+    var diagrams = ziggy.deserializeLeaky(ziggy.Dictionary(railroad.Diagram), arena, ziggy_src, &meta, .{}) catch |err| {
         if (err == error.OutOfMemory) @panic("oom");
         std.process.fatal("{f}", .{
-            meta.reportErrorsFmt(arena, .{}, cmd.input_path, src, err),
+            meta.reportErrorsFmt(arena, .{}, cmd.input_path, ziggy_src, err),
         });
     };
-    for (diagrams.fields.values()) |*d| d.layout() catch @panic("TODO: handle layout");
+
+    for (diagrams.fields.keys(), diagrams.fields.values()) |k, *d| {
+        var diag: railroad.Diagram.LayoutDiagnostic = undefined;
+        d.layout(&diagrams, k, &diag) catch |err| switch (err) {
+            error.Validation => {
+                fatal.msg(
+                    \\{f}
+                    \\
+                ,
+                    .{diag.fmt(k, cmd.input_path, ziggy_src)},
+                );
+                return;
+            },
+        };
+    }
 
     const out_dir = Io.Dir.cwd().createDirPathOpen(
         io,
         cmd.output_dir_path,
         .{},
-    ) catch |err| fatalErr(
-        "unable to create and open directory path '{s}': {t}",
-        .{ cmd.output_dir_path, err },
-    );
+    ) catch |err| fatal.dirCreate(cmd.output_dir_path, err);
 
     var file_writer_buf: [4096]u8 = undefined;
     switch (cmd.mode) {
@@ -118,18 +132,21 @@ fn build(io: Io, arena: Allocator, args: []const []const u8) void {
                     &name_buf,
                     "{s}.svg",
                     .{std.fs.path.basename(k)},
-                ) catch fatalErr("diagram name too long: '{s}'", .{k});
+                ) catch fatal.msg("diagram name too long: '{s}'", .{k});
 
                 const file = out_dir.createFile(io, file_name, .{ .truncate = true }) catch |err| {
-                    fatalErr("unable to create file '{s}': {t}", .{ file_name, err });
+                    fatal.fileCreate(file_name, err);
                 };
                 defer file.close(io);
 
                 var file_writer = file.writer(io, &file_writer_buf);
                 const w = &file_writer.interface;
 
-                w.print("{f}", .{d.fmt(css_src)}) catch |err| fatalIo(file_name, err);
-                w.flush() catch |err| fatalIo(file_name, err);
+                w.print(
+                    "{f}",
+                    .{d.fmt(css_src)},
+                ) catch |err| fatal.fileWrite(file_name, err);
+                w.flush() catch |err| fatal.fileWrite(file_name, err);
             }
         },
         .html => |name| {
@@ -137,7 +154,7 @@ fn build(io: Io, arena: Allocator, args: []const []const u8) void {
             const html_name = if (endsWith(u8, name, ".html"))
                 name
             else
-                std.fmt.bufPrint(&name_buf, "{s}.html", .{name}) catch fatalErr(
+                std.fmt.bufPrint(&name_buf, "{s}.html", .{name}) catch fatal.msg(
                     "html file name too long: '{s}'",
                     .{name},
                 );
@@ -146,7 +163,7 @@ fn build(io: Io, arena: Allocator, args: []const []const u8) void {
                 io,
                 html_name,
                 .{ .truncate = true },
-            ) catch |err| fatalErr(
+            ) catch |err| fatal.msg(
                 "unable to create file '{s}': {t}",
                 .{ html_name, err },
             );
@@ -155,11 +172,14 @@ fn build(io: Io, arena: Allocator, args: []const []const u8) void {
             var file_writer = file.writer(io, &file_writer_buf);
             const w = &file_writer.interface;
 
-            html.render(&diagrams, css_src, w) catch |err| fatalErr(
-                "error writing to '{s}': {t}",
-                .{ html_name, err },
-            );
-            w.flush() catch |err| fatalIo(html_name, err);
+            html.render(
+                arena,
+                &diagrams,
+                css_src,
+                ziggy_src,
+                w,
+            ) catch |err| fatal.fileWrite(html_name, err);
+            w.flush() catch |err| fatal.fileWrite(html_name, err);
         },
     }
 }
@@ -171,16 +191,13 @@ fn install_schema(io: Io, args: []const []const u8) void {
         io,
         cmd.output_dir_path,
         .{},
-    ) catch |err| fatalErr(
-        "unable to ensure directory path '{s}': {t}",
-        .{ cmd.output_dir_path, err },
-    );
+    ) catch |err| fatal.dirCreate(cmd.output_dir_path, err);
 
     var name_buf: [std.fs.max_name_bytes]u8 = undefined;
     const full_name = if (endsWith(u8, cmd.name, ".ziggy-schema"))
         cmd.name
     else
-        std.fmt.bufPrint(&name_buf, "{s}.ziggy-schema", .{cmd.name}) catch fatalErr(
+        std.fmt.bufPrint(&name_buf, "{s}.ziggy-schema", .{cmd.name}) catch fatal.msg(
             "diagram name too long: '{s}'",
             .{cmd.name},
         );
@@ -189,10 +206,14 @@ fn install_schema(io: Io, args: []const []const u8) void {
         io,
         full_name,
         .{ .truncate = true },
-    ) catch |err| fatalIo(full_name, err);
+    ) catch |err| fatal.fileCreate(full_name, err);
     defer file.close(io);
 
-    file.writePositionalAll(io, schema, 0) catch |err| fatalIo(full_name, err);
+    file.writePositionalAll(
+        io,
+        schema,
+        0,
+    ) catch |err| fatal.fileWrite(full_name, err);
 }
 
 fn show_css(io: Io, args: []const []const u8) void {
@@ -200,30 +221,21 @@ fn show_css(io: Io, args: []const []const u8) void {
         if (!eql(u8, args[0], "--help") and !eql(u8, args[0], "-h")) {
             std.debug.print("error: unknown arguments\n\n", .{});
         }
-        const help =
+        const css_help =
             \\Usage: railroad show-css
             \\
             \\Displays the default CSS style.
             \\
             \\
         ;
-        std.debug.print("{s}", .{help});
+        std.debug.print("{s}", .{css_help});
         std.process.exit(1);
     }
 
     Io.File.stdout().writeStreamingAll(
         io,
         default_style,
-    ) catch |err| fatalIo("stdout", err);
-}
-
-fn fatalErr(comptime fmt: []const u8, args: anytype) noreturn {
-    std.debug.print("error: " ++ fmt ++ "\n", args);
-    std.process.exit(1);
-}
-
-fn fatalIo(file_name: []const u8, err: anyerror) noreturn {
-    fatalErr("i/o error for '{s}': {t}", .{ file_name, err });
+    ) catch |err| fatal.fileWrite("stdout", err);
 }
 
 const BuildCommand = struct {
@@ -233,7 +245,7 @@ const BuildCommand = struct {
     mode: Mode,
 
     const Mode = union(enum) { svg, html: []const u8 };
-    const help =
+    const build_help =
         \\Usage: railroad build INPUT_ZIGGY_FILE [OPTIONS]
         \\
         \\Build SVG files from a Ziggy Document containing diagram
@@ -262,47 +274,47 @@ const BuildCommand = struct {
             const arg = args[i];
 
             if (startsWith(u8, arg, "--output=")) {
-                if (input_path != null) fatalErr("more than one '--output' argument", .{});
+                if (input_path != null) fatal.msg("more than one '--output' argument", .{});
                 const val = arg["--output=".len..];
-                if (val.len == 0) fatalErr("missing '--output' value", .{});
+                if (val.len == 0) fatal.msg("missing '--output' value", .{});
                 output_dir_path = val;
             } else if (eql(u8, arg, "--output")) {
-                if (input_path != null) fatalErr("more than one '--output' argument", .{});
+                if (input_path != null) fatal.msg("more than one '--output' argument", .{});
                 i += 1;
-                if (i == args.len) fatalErr("missing '--output' value", .{});
+                if (i == args.len) fatal.msg("missing '--output' value", .{});
                 output_dir_path = args[i];
                 // ---
             } else if (startsWith(u8, arg, "--css=")) {
-                if (css != null) fatalErr("more than one '--css' argument", .{});
+                if (css != null) fatal.msg("more than one '--css' argument", .{});
                 const val = arg["--css=".len..];
-                if (val.len == 0) fatalErr("missing '--css' value", .{});
+                if (val.len == 0) fatal.msg("missing '--css' value", .{});
                 css = val;
             } else if (eql(u8, arg, "--css")) {
-                if (css != null) fatalErr("more than one '--css' argument", .{});
+                if (css != null) fatal.msg("more than one '--css' argument", .{});
                 i += 1;
-                if (i == args.len) fatalErr("missing '--css' value", .{});
+                if (i == args.len) fatal.msg("missing '--css' value", .{});
                 css = args[i];
                 // ---
             } else if (startsWith(u8, arg, "--html=")) {
-                if (mode == .html) fatalErr("more than one '--html' argument", .{});
+                if (mode == .html) fatal.msg("more than one '--html' argument", .{});
                 const val = arg["--html=".len..];
-                if (val.len == 0) fatalErr("missing '--html' value", .{});
+                if (val.len == 0) fatal.msg("missing '--html' value", .{});
                 mode = .{ .html = val };
             } else if (eql(u8, arg, "--html")) {
-                if (mode == .html) fatalErr("more than one '--html' argument", .{});
+                if (mode == .html) fatal.msg("more than one '--html' argument", .{});
                 mode = .{ .html = "diagrams.html" };
                 // ---
             } else if (eql(u8, arg, "--help") or eql(u8, arg, "-h")) {
-                std.process.fatal(help, .{});
+                std.process.fatal(build_help, .{});
             } else {
-                if (input_path != null) fatalErr("more than one input file argument", .{});
+                if (input_path != null) fatal.msg("more than one input file argument", .{});
                 input_path = arg;
             }
         }
 
         return .{
             .mode = mode,
-            .input_path = input_path orelse fatalErr("missing input file argument", .{}),
+            .input_path = input_path orelse fatal.msg("missing input file argument", .{}),
             .output_dir_path = output_dir_path orelse "diagrams",
             .css = css,
         };
@@ -316,7 +328,7 @@ const LiveCommmand = struct {
     host: []const u8,
     port: u16,
 
-    const help =
+    const live_help =
         \\Usage: railroad live INPUT_ZIGGY_FILE [OPTIONS]
         \\
         \\Start a live server that displays the diagrams and listens to
@@ -352,7 +364,7 @@ const LiveCommmand = struct {
                 if (maybe_port) |p| port = p;
             } else if (std.mem.eql(u8, arg, "--host")) {
                 i += 1;
-                if (i >= args.len) fatalErr(
+                if (i >= args.len) fatal.msg(
                     "error: missing argument to '--host'",
                     .{},
                 );
@@ -361,46 +373,46 @@ const LiveCommmand = struct {
                 // ---
             } else if (std.mem.startsWith(u8, arg, "--port=")) {
                 const suffix = arg["--port=".len..];
-                port = std.fmt.parseInt(u16, suffix, 10) catch |err| fatalErr(
+                port = std.fmt.parseInt(u16, suffix, 10) catch |err| fatal.msg(
                     "error: bad port value '{s}': {s}",
                     .{ arg, @errorName(err) },
                 );
             } else if (std.mem.eql(u8, arg, "--port")) {
                 i += 1;
-                if (i >= args.len) fatalErr(
+                if (i >= args.len) fatal.msg(
                     "error: missing argument to '--port'",
                     .{},
                 );
-                port = std.fmt.parseInt(u16, args[i], 10) catch |err| fatalErr(
+                port = std.fmt.parseInt(u16, args[i], 10) catch |err| fatal.msg(
                     "error: bad port value '{s}': {s}",
                     .{ arg, @errorName(err) },
                 );
                 // ---
             } else if (startsWith(u8, arg, "--css=")) {
-                if (css != null) fatalErr("more than one '--css' argument", .{});
+                if (css != null) fatal.msg("more than one '--css' argument", .{});
                 const val = arg["--css=".len..];
-                if (val.len == 0) fatalErr("missing '--css' value", .{});
+                if (val.len == 0) fatal.msg("missing '--css' value", .{});
                 css = val;
             } else if (eql(u8, arg, "--css")) {
-                if (css != null) fatalErr("more than one '--css' argument", .{});
+                if (css != null) fatal.msg("more than one '--css' argument", .{});
                 i += 1;
-                if (i == args.len) fatalErr("missing '--css' value", .{});
+                if (i == args.len) fatal.msg("missing '--css' value", .{});
                 css = args[i];
                 // ---
             } else if (eql(u8, arg, "--no-browser")) {
-                if (!browser) fatalErr("more than one '--no-browser' argument", .{});
+                if (!browser) fatal.msg("more than one '--no-browser' argument", .{});
                 browser = false;
                 // ---
             } else if (eql(u8, arg, "--help") or eql(u8, arg, "-h")) {
-                std.process.fatal(help, .{});
+                std.process.fatal(live_help, .{});
             } else {
-                if (input_path != null) fatalErr("more than one input file argument", .{});
+                if (input_path != null) fatal.msg("more than one input file argument", .{});
                 input_path = arg;
             }
         }
 
         return .{
-            .input_path = input_path orelse fatalErr("missing input file argument", .{}),
+            .input_path = input_path orelse fatal.msg("missing input file argument", .{}),
             .css = css,
             .browser = browser,
             .host = host orelse "localhost",
@@ -410,7 +422,7 @@ const LiveCommmand = struct {
 
     fn parseAddress(arg: []const u8) struct { []const u8, ?u16 } {
         if (arg.len <= 0) {
-            fatalErr(
+            fatal.msg(
                 "error: missing argument to '--host='",
                 .{},
             );
@@ -423,7 +435,7 @@ const LiveCommmand = struct {
                     break :ipv6 arg[0 .. i + 1];
                 }
             }
-            fatalErr(
+            fatal.msg(
                 "error: unmatched '[' in '--host='",
                 .{},
             );
@@ -432,7 +444,7 @@ const LiveCommmand = struct {
         var port: ?u16 = null;
         const maybe_port = arg[host.len..];
         if (maybe_port.len > 0 and maybe_port[0] == ':') {
-            port = std.fmt.parseInt(u16, maybe_port[1..], 10) catch |err| fatalErr(
+            port = std.fmt.parseInt(u16, maybe_port[1..], 10) catch |err| fatal.msg(
                 \\error: bad port in '{s}': {s}
                 \\hint: if you meant to use IPv6, wrap it in square brackets, e.g. --host=[::1]
                 \\
@@ -450,7 +462,7 @@ const InstallSchemaCommand = struct {
     name: []const u8,
 
     const Mode = union(enum) { svg, html: ?[]const u8 };
-    const help =
+    const install_schema_help =
         \\Usage: railroad install-schema DIR [OPTIONS]
         \\
         \\Writes a copy of the Railroad Ziggy Schema into DIR.
@@ -479,30 +491,35 @@ const InstallSchemaCommand = struct {
             const arg = args[i];
 
             if (startsWith(u8, arg, "--name=")) {
-                if (name != null) fatalErr("more than one '--name' argument", .{});
+                if (name != null) fatal.msg("more than one '--name' argument", .{});
                 const val = arg["--name=".len..];
-                if (val.len == 0) fatalErr("missing '--name' value", .{});
+                if (val.len == 0) fatal.msg("missing '--name' value", .{});
                 name = val;
             } else if (eql(u8, arg, "--name")) {
-                if (name != null) fatalErr("more than one '--name' argument", .{});
+                if (name != null) fatal.msg("more than one '--name' argument", .{});
                 i += 1;
-                if (i == args.len) fatalErr("missing '--name' value", .{});
+                if (i == args.len) fatal.msg("missing '--name' value", .{});
                 name = args[i];
                 // ---
             } else if (eql(u8, arg, "--help") or eql(u8, arg, "-h")) {
-                std.process.fatal(help, .{});
+                std.process.fatal(install_schema_help, .{});
             } else {
-                if (output_dir_path != null) fatalErr("more than one input file argument", .{});
+                if (output_dir_path != null) fatal.msg("more than one input file argument", .{});
                 output_dir_path = arg;
             }
         }
 
         return .{
             .name = name orelse ".ziggy-schema",
-            .output_dir_path = output_dir_path orelse fatalErr(
+            .output_dir_path = output_dir_path orelse fatal.msg(
                 "missing output dir argument",
                 .{},
             ),
         };
     }
 };
+
+fn fatalHelp() noreturn {
+    std.debug.print(help, .{});
+    std.process.exit(1);
+}

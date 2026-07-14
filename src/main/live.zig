@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const assert = std.debug.assert;
 const eql = std.mem.eql;
@@ -11,11 +12,13 @@ const railroad = @import("railroad");
 const fatal = @import("../fatal.zig");
 const html = @import("../html.zig");
 
+const live_css = @embedFile("live.css");
 const live_js = @embedFile("live.js");
+const html_js = @embedFile("../html.js");
 const html_css = @embedFile("../html.css");
 const default_style = @embedFile("../default.css");
 const schema = @embedFile(".ziggy-schema");
-const ziggy_ziggy = @embedFile("ziggy.ziggy");
+const example_src = @embedFile("example.ziggy");
 
 const help =
     \\Usage: railroad live INPUT_ZIGGY_FILE [OPTIONS]
@@ -37,8 +40,8 @@ const help =
 ;
 
 pub const Event = union(enum) {
-    changed_css: [:0]const u8,
-    changed_input: [:0]const u8,
+    changed_css,
+    changed_input,
     connect: WebSocket,
     disconnect: struct {
         conn: WebSocket,
@@ -59,13 +62,17 @@ pub fn run(io: Io, gpa: Allocator, args: []const []const u8) error{OutOfMemory}!
     );
     defer gpa.free(url);
 
-    var h: WatchHandler = .{ .io = io, .gpa = gpa, .channel = &channel };
+    var h: WatchHandler = .{
+        .io = io,
+        .channel = &channel,
+        .ziggy_path = cmd.input_path,
+    };
     var watcher = nightwatch.Default.init(io, gpa, &h.handler) catch |err| {
         fatal.msg("unable to start file watcher: {t}", .{err});
     };
     defer watcher.deinit();
 
-    const input_src = readOrInitFile(io, gpa, cmd.input_path, ziggy_ziggy);
+    const ziggy_src = readOrInitFile(io, gpa, cmd.input_path, example_src);
     watcher.watch(cmd.input_path) catch |err| fatal.msg(
         "unable to watch '{s}': {t}",
         .{ cmd.input_path, err },
@@ -82,7 +89,7 @@ pub fn run(io: Io, gpa: Allocator, args: []const []const u8) error{OutOfMemory}!
 
     var build_lock: Io.RwLock = .init;
     var build: Build = undefined;
-    build.init(gpa, input_src, css_src);
+    build.init(gpa, cmd.input_path, ziggy_src, cmd.css_path, css_src);
 
     var server: Server = .initAndListen(
         io,
@@ -113,7 +120,12 @@ pub fn run(io: Io, gpa: Allocator, args: []const []const u8) error{OutOfMemory}!
         .{err},
     );
 
-    std.debug.print("listening at {s}\n", .{url});
+    std.debug.print("Listening at {s}\n", .{url});
+    if (cmd.browser) {
+        openBrowserTab(io, url) catch |err| {
+            std.log.err("unable to open browser: {t}", .{err});
+        };
+    }
 
     // Any task returning means we should exit.
     _ = select.await() catch {};
@@ -142,21 +154,18 @@ fn broadcastWebsockets(
         std.log.debug("new event: {s}", .{@tagName(event)});
 
         switch (event) {
-            .changed_input => |src| {
-                var body: Io.Writer.Allocating = .init(gpa);
-                defer body.deinit();
-                const w = &body.writer;
-                w.writeAll("BODY\n") catch fatal.oom();
-
+            .changed_input => {
                 build_lock.lock(io) catch break;
                 {
                     defer build_lock.unlock(io);
-                    build.rebuildDiagrams(gpa, src);
-                    build.render(w) catch fatal.oom();
+
+                    _ = build.arena_state.reset(.retain_capacity);
+                    const src = readFile(io, build.arena_state.allocator(), build.ziggy_path);
+                    build.rebuildDiagrams(src);
                 }
 
                 for (websockets.values()) |*conn| {
-                    conn.writeMessage(body.written(), .text) catch |err| {
+                    conn.writeMessage(build.out, .text) catch |err| {
                         std.log.debug(
                             "error writing to ws: {s}",
                             .{@errorName(err)},
@@ -164,7 +173,9 @@ fn broadcastWebsockets(
                     };
                 }
             },
-            .changed_css => |src| {
+            .changed_css => {
+                const src = readFile(io, gpa, build.css_path.?);
+
                 build_lock.lock(io) catch break;
                 {
                     defer build_lock.unlock(io);
@@ -332,16 +343,45 @@ const Server = struct {
                 \\<html>
                 \\<head>
                 \\<script>
+                \\
             ++ live_js ++
+                \\
+            ++ html_js ++
+                \\
                 \\</script>
                 \\<style>
+                \\
+            ++ live_css ++
+                \\
             ++ html_css ++
+                \\
                 \\</style>
-                \\<style id="__railroad_css">
-                \\</style>
+                \\<style id="__railroad_css"></style>
                 \\</head>
                 \\<body>
-                \\Waiting for websocket to connect...
+                \\<div id="sticky">
+                \\<div class="top-bar">
+                \\<h1>Railroad Live</h1>
+                \\<div class="status">
+                \\<div>
+                \\<svg id="status-svg" aria-hidden="true" focusable="false" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible">
+                \\<circle cx="8" cy="8" r="8"/>
+                \\</svg>
+                \\</div>
+                \\<div id="status-msg">Connecting...</div>
+                \\</div>
+                // \\<div class="copy-css">
+                // \\<svg aria-hidden="true" focusable="false" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align:text-bottom">
+                // \\<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>
+                // \\<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>
+                // \\<div class="tooltip">copy</div>
+                // \\</svg>
+                // \\<div>css</div>
+                // \\</div>
+                \\</div>
+                \\<div id="error"></div>
+                \\</div>
+                \\<main id="main"></main>
                 \\</body>
                 \\</html>
             , .{
@@ -374,19 +414,13 @@ const Server = struct {
 
         var ws = req.respondWebSocket(.{ .key = wsup }) catch return;
 
-        var body: Io.Writer.Allocating = .init(s.gpa);
-        defer body.deinit();
-
-        const w = &body.writer;
-        w.writeAll("BODY\n") catch fatal.oom();
         s.build_lock.lock(s.io) catch return;
         {
             defer s.build_lock.unlock(s.io);
             var css_msg: [2][]const u8 = .{ "CSS\n", s.build.css_src };
             ws.writeMessageVecUnflushed(&css_msg, .text) catch return;
-            s.build.render(w) catch fatal.oom();
+            ws.writeMessage(s.build.out, .text) catch return;
         }
-        ws.writeMessage(body.written(), .text) catch return;
 
         s.channel.putOne(s.io, .{ .connect = ws }) catch return;
 
@@ -408,28 +442,31 @@ const Server = struct {
 };
 
 const Build = struct {
-    css_src: []const u8,
-    input_src: [:0]const u8,
+    css_path: ?[]const u8,
+    css_src: [:0]const u8,
+    ziggy_path: []const u8,
+    ziggy_src: [:0]const u8,
+    arena_state: std.heap.ArenaAllocator,
     meta: ziggy.Deserializer.Meta,
-    diagrams: ziggy.Deserializer.Error!ziggy.Deserializer.Value(
-        ziggy.Dictionary(railroad.Diagram),
-    ),
+    diagrams: ziggy.Deserializer.Error!ziggy.Dictionary(railroad.Diagram),
+    // Buffered output
+    out: []const u8,
 
-    fn init(b: *Build, gpa: Allocator, input_src: [:0]const u8, css_src: []const u8) void {
+    fn init(
+        b: *Build,
+        gpa: Allocator,
+        ziggy_path: []const u8,
+        ziggy_src: [:0]const u8,
+        css_path: ?[]const u8,
+        css_src: [:0]const u8,
+    ) void {
+        b.css_path = css_path;
         b.css_src = css_src;
-        b.input_src = input_src;
+        b.ziggy_src = example_src;
+        b.ziggy_path = ziggy_path;
         b.meta = .init;
-        b.diagrams = ziggy.deserialize(
-            ziggy.Dictionary(railroad.Diagram),
-            gpa,
-            input_src,
-            &b.meta,
-            .{},
-        );
-
-        if (b.diagrams) |*ds| {
-            for (ds.value.fields.values()) |*d| d.layout() catch @panic("TODO: handle layout");
-        } else |_| {}
+        b.arena_state = .init(gpa);
+        b.rebuildDiagrams(ziggy_src);
     }
 
     fn swapCss(b: *Build, gpa: Allocator, src: [:0]const u8) void {
@@ -439,33 +476,72 @@ const Build = struct {
         b.css_src = src;
     }
 
-    fn rebuildDiagrams(b: *Build, gpa: Allocator, src: [:0]const u8) void {
-        if (b.input_src.ptr != ziggy_ziggy) {
-            gpa.free(b.input_src);
-        }
-
-        if (b.diagrams) |d| d.deinit() else |_| {}
-
-        b.input_src = src;
+    fn rebuildDiagrams(b: *Build, src: [:0]const u8) void {
+        b.ziggy_src = src;
         b.meta = .init;
-        b.diagrams = ziggy.deserialize(
+        b.diagrams = ziggy.deserializeLeaky(
             ziggy.Dictionary(railroad.Diagram),
-            gpa,
+            b.arena_state.allocator(),
             src,
             &b.meta,
             .{},
         );
 
-        if (b.diagrams) |*ds| {
-            for (ds.value.fields.values()) |*d| d.layout() catch @panic("TODO: handle layout");
-        } else |_| {}
+        b.out = b.render() catch "ERROR\nOut of Memory!";
     }
 
-    fn render(b: *Build, w: *Io.Writer) !void {
-        if (b.diagrams) |*ds| try html.renderBody(&ds.value, w) else |err| {
-            // error
-            std.debug.panic("TODO: handle diagram errors {t}", .{err});
+    fn render(b: *Build) error{
+        OutOfMemory,
+        WriteFailed,
+    }![]const u8 {
+        var aw: Io.Writer.Allocating = .init(b.arena_state.allocator());
+        const w_ok = &aw.writer;
+
+        var aw_err: Io.Writer.Allocating = .init(b.arena_state.allocator());
+        const w_err = &aw_err.writer;
+
+        if (b.diagrams) |*ds| {
+            for (ds.fields.keys(), ds.fields.values()) |k, *d| {
+                var diag: railroad.Diagram.LayoutDiagnostic = undefined;
+                d.layout(ds, k, &diag) catch |err| switch (err) {
+                    error.Validation => {
+                        try w_err.print(
+                            \\ERROR
+                            \\{f}
+                            \\
+                        ,
+                            .{diag.fmt(k, b.ziggy_path, b.ziggy_src)},
+                        );
+
+                        return aw_err.toOwnedSlice();
+                    },
+                };
+            }
+
+            try w_ok.writeAll("BODY\n");
+            try html.renderBody(
+                b.arena_state.allocator(),
+                ds,
+                b.ziggy_src,
+                w_ok,
+            );
+        } else |err| {
+            if (err == error.OutOfMemory) return error.OutOfMemory;
+
+            try w_err.writeAll("ERROR\n");
+            try b.meta.reportErrors(
+                b.arena_state.allocator(),
+                .{},
+                b.ziggy_path,
+                b.ziggy_src,
+                err,
+                w_err,
+            );
+
+            return aw_err.toOwnedSlice();
         }
+
+        return aw.toOwnedSlice();
     }
 };
 
@@ -505,7 +581,7 @@ fn readOrInitFile(io: Io, gpa: Allocator, path: []const u8, default: [:0]const u
             file.writePositionalAll(io, default, 0) catch |write_err|
                 fatal.fileWrite(path, write_err);
 
-            return default;
+            return gpa.dupeSentinel(u8, default, 0) catch fatal.oom();
         },
         else => fatal.fileRead(path, err),
     };
@@ -513,8 +589,9 @@ fn readOrInitFile(io: Io, gpa: Allocator, path: []const u8, default: [:0]const u
 
 const WatchHandler = struct {
     io: Io,
-    gpa: Allocator,
     channel: *Io.Queue(Event),
+    ziggy_path: []const u8,
+
     handler: nightwatch.Default.Handler = .{
         .vtable = &.{
             .change = change,
@@ -533,21 +610,42 @@ const WatchHandler = struct {
                 std.fs.path.basename(path),
             }),
             .created, .modified => {
-                const src = readFile(self.io, self.gpa, path);
-                if (std.mem.endsWith(u8, path, ".ziggy")) {
-                    self.channel.putOneUncancelable(self.io, .{ .changed_input = src }) catch {};
+                if (std.mem.endsWith(u8, path, self.ziggy_path)) {
+                    self.channel.putOneUncancelable(self.io, .changed_input) catch {};
                 } else {
-                    assert(std.mem.endsWith(u8, path, ".css"));
-                    self.channel.putOneUncancelable(self.io, .{ .changed_css = src }) catch {};
+                    self.channel.putOneUncancelable(self.io, .changed_css) catch {};
                 }
             },
         }
     }
 
     fn rename(_: *nightwatch.Default.Handler, src: []const u8, dst: []const u8, _: nightwatch.ObjectType) error{HandlerFailed}!void {
-        std.debug.print("rename  {s}  ->  {s}\n", .{ src, dst });
+        _ = dst;
+        fatal.msg("file '{s}' deleted, exiting", .{src});
     }
 };
+
+fn openBrowserTab(io: Io, url: []const u8) !void {
+    // Until https://github.com/ziglang/zig/issues/19205 is implemented, we
+    // spawn and then leak a concurrent task for this child process.
+    const future = try io.concurrent(openBrowserTabTask, .{ io, url });
+    _ = future; // leak it
+}
+
+fn openBrowserTabTask(io: Io, url: []const u8) !void {
+    const main_exe = switch (builtin.os.tag) {
+        .windows => "explorer",
+        .macos => "open",
+        else => "xdg-open",
+    };
+    var child = try std.process.spawn(io, .{
+        .argv = &.{ main_exe, url },
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
+    _ = try child.wait(io);
+}
 
 const Command = struct {
     input_path: []const u8,

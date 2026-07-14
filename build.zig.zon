@@ -3,12 +3,12 @@
     .version = "0.0.1",
     .dependencies = .{
         .ziggy = .{
-            .url = "git+https://github.com/kristoff-it/ziggy#0185565a88290854cdce53ddf66a2e8cdcd5aee9",
-            .hash = "ziggy-0.1.0-kTg8v8SjBwAsJf_JJy-oxhi4OV_2Z652lD6IJ5KEmYW1",
+            .url = "git+https://github.com/kristoff-it/ziggy#8e1334d4cfa945848c1d4bcd116be4d7c4041de0",
+            .hash = "ziggy-0.2.0-kTg8v-DxBwDNFmH93b074MhakI001VdGl2CUxKJchUtR",
         },
         .nightwatch = .{
-            .url = "git+https://github.com/kristoff-it/nightwatch?ref=fixes#df1514abb07efdc075ed31e38035720234386616",
-            .hash = "nightwatch-1.0.0-uXzeH0OgAgAEpKcxME4HDU4PSaMNQ3l79PtqY-U0h7cm",
+            .url = "git+https://github.com/kristoff-it/nightwatch?ref=fixes#c6db9e1ee67e9beb8a2555a74d1959f76f25b3f1",
+            .hash = "nightwatch-1.0.0-uXzeH02gAgA1UT0Fy-Str3wMW71Cq_QCn_peHH1JMp1f",
         },
     },
     .minimum_zig_version = "0.17.0-dev.857+2b2b85c5f",

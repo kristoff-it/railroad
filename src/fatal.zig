@@ -16,6 +16,10 @@ pub fn dir(path: []const u8, err: anyerror) noreturn {
     msg("error accessing dir '{s}': {t}\n", .{ path, err });
 }
 
+pub fn dirCreate(path: []const u8, err: anyerror) noreturn {
+    msg("error creating dir '{s}': {t}\n", .{ path, err });
+}
+
 pub fn file(path: []const u8, err: anyerror) noreturn {
     msg("error accessing file '{s}': {t}\n", .{ path, err });
 }

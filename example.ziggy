@@ -1,0 +1,244 @@
+{
+    "leaves": .{
+        .delimiters = .pipes,
+        .description = 
+            \\These are the leaf (non-container) elements that you can
+            \\place in a railroad diagram. One, 'skip', is not visible by
+            \\itself, but you will be able to see it when used in a choice
+            \\container. Lastly, this diagram uses "pipes" as delimiters
+            \\instead of the default dot and arrow.
+        ,
+        .body = [
+            .terminal("terminal"),
+            .external("non-terminal"),
+            .inline_comment("inline comment"),
+            .label_path("labeled path"),
+            .skip,
+        ],
+    },
+    "decorations": .{
+        .description = "",
+        .body = [
+            .label(.{
+                .label = "label",
+                .item = .terminal("terminal"),
+            }),
+            .group(.{
+                .label = "group",
+                .item = .sequence([
+                    .external("1"),
+                    .terminal("2"),
+                    .external("3"),
+                ]),
+            }),
+        ],
+    },
+    "sequence": .{
+        .description = 
+            \\A sequence is a concatenation of items, and the body of a
+            \\diagram is implicitly a sequence. Switch to the Ziggy Source
+            \\tab to see how each graph looks in source.
+        ,
+        .body = [
+            .sequence([
+                .terminal("body"),
+                .external("implicitly"),
+            ]),
+            .reference("sequence"),
+        ],
+    },
+    "sequence-stack": .{
+        .description = 
+            \\A stack is the same as a sequence, but renders vertically.
+        ,
+        .body = [
+            .sequence_stack([
+                .terminal("rail"),
+                .external("road"),
+            ]),
+            .terminal("diagram"),
+        ],
+    },
+    "sequence-optional": .{
+        .description = 
+            \\ A sequence where every item is individually optional, but at
+            \\ least one item must be chosen.
+        ,
+        .body = [
+            .sequence_optional([
+                .terminal("rail"),
+                .external("road"),
+                .terminal("diagram"),
+            ]),
+        ],
+    },
+    "sequence-alternating": .{
+        .description = 
+            \\An alternating sequence of two possible items.
+        ,
+        .body = [
+            .sequence_alternating(.{
+                .first = .terminal("zig"),
+                .second = .terminal("zag"),
+            }),
+        ],
+    },
+    "choice-simple": .{
+        .description = 
+            \\A choce represents a branching point where only one of the
+            \\listed items can be chosen. There are a few variants of
+            \\'choice', the simpler versions are present here.
+        ,
+        .body = [
+            .choice([
+                .terminal("rail"),
+                .external("road"),
+                .terminal("diagram"),
+            ]),
+            .choice_middle([
+                .terminal("rail"),
+                .external("road"),
+                .terminal("diagram"),
+            ]),
+            .choice_last([
+                .terminal("rail"),
+                .external("road"),
+                .terminal("diagram"),
+            ]),
+        ],
+    },
+    "choice-horizontal": .{
+        .description = 
+            \\Horizontal choices are useful for splitting up big vertical
+            \\choices into smaller groups to occupy more horizontal space.
+            \\This example also shows 'choice_index', which lets you manage
+            \\more precitely which item you want to appear on the
+            \\horizontal line, which is generally understood as the most
+            \\"standard" option (where applicable).
+        ,
+        .body = [
+            .choice_horizontal([
+                .choice_index(.{
+                    .index = 1,
+                    .items = [
+                        .terminal("0"),
+                        .terminal("1"),
+                        .terminal("2"),
+                        .terminal("3"),
+                    ],
+                }),
+                .choice_index(.{
+                    .index = 2,
+                    .items = [
+                        .terminal("a"),
+                        .terminal("b"),
+                        .terminal("c"),
+                        .terminal("d"),
+                    ],
+                }),
+            ]),
+        ],
+    },
+    "multiple-choice": .{
+        .description = 
+            \\Multiple choice express the ability to choose the order in
+            \\which to select the items, but implies that each item can
+            \\only be used once (i.e. it gets "consumed").
+            \\The second variant ('all') additionally requires that all
+            \\items be consumed before leaving the multiple choice.
+        ,
+        .body = [
+            .multiple_choice_any(.{
+                .index = 1,
+                .items = [
+                    .terminal("1"),
+                    .terminal("2"),
+                    .terminal("3"),
+                ],
+            }),
+            .multiple_choice_all(.{
+                .index = 1,
+                .items = [
+                    .terminal("a"),
+                    .terminal("b"),
+                    .terminal("c"),
+                ],
+            }),
+        ],
+    },
+    "repeat": .{
+        .description = 
+            \\For when a path can be taken more than once. Can optionally
+            \\specify a separator element. The last example shows how to
+            \\make a repeat optional by embedding it in a choice alongside
+            \\a skip.
+        ,
+        .body = [
+            .repeat(.external("whitespace")),
+            .repeat_separator(.{
+                .item = .external("item"),
+                .separator = .terminal(","),
+            }),
+            .choice_last([
+                .repeat_separator(.{
+                    .item = .external("dirname"),
+                    .separator = .terminal("/"),
+                }),
+                .skip,
+            ]),
+        ],
+    },
+    "complex-example": .{
+        .description = 
+            \\You have now seen all the items that can be placed in a
+            \\railroad diagram. Here's one last example to show how a
+            \\real-world diagram looks like. This is the diagram
+            \\representing a string literal in Ziggy.
+        ,
+        .body = [
+            .group(.{
+                .label = "no whitespace",
+                .item = .sequence([
+                    .terminal("\""),
+                    .choice([
+                        .skip,
+                        .repeat_separator(.{
+                            .item = .choice([
+                                .external(" printable unicode except \" and \\ "),
+                                .sequence([
+                                    .terminal("\\"),
+                                    .choice([
+                                        .choice_horizontal([
+                                            .terminal("\""),
+                                            .terminal("\\"),
+                                            .terminal("/"),
+                                            .terminal("b"),
+                                        ]),
+                                        .choice_horizontal([
+                                            .terminal("f"),
+                                            .terminal("n"),
+                                            .terminal("r"),
+                                            .terminal("t"),
+                                        ]),
+                                        .choice([
+                                            .sequence([
+                                                .terminal("x"),
+                                                .external("2 hex digits"),
+                                            ]),
+                                            .sequence([
+                                                .terminal("u"),
+                                                .external("4 hex digits"),
+                                            ]),
+                                        ]),
+                                    ]),
+                                ]),
+                            ]),
+                        }),
+                    ]),
+                    .terminal("\""),
+                ]),
+            }),
+        ],
+    },
+}
+

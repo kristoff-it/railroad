@@ -2,9 +2,11 @@ $ = {:}Diagram
 
 struct Diagram {
     delimiters: ?Delimiters,
-    label: ?bytes,
+    /// Show the diagram's name inside the diagram itself
+    label: ?bool,
     alignment: ?Alignment,
-    body: []Node,
+    description: ?bytes,
+    body: []Item,
 
     union Delimiters {
         pipes,
@@ -18,86 +20,96 @@ struct Diagram {
     }
 }
 
-union Node {
-    /// Represents literal text.
+union Item {
+    /// A terminal in a grammar, i.e. literal text that matches a rule.
     terminal: bytes,
-    /// Represents an instruction or another production.
-    non_terminal: bytes,
-    /// Same as `non_terminal`, but it also includes a small label on top,
-    /// useful for lightweight notation of a single node. See `group` for
-    /// giving a label to a group of nodes.
-    label: Label,
-    /// A comment.
-    comment: bytes,
+    /// A reference to another production (i.e. another diagram).
+    /// The value must be the name of another diagram in this file.
+    reference: bytes,
+    /// Represents an instruction or a reference to an external diagram.
+    /// An example could be a reference to unicode or a list of letters.
+    external: bytes,
+    /// A comment that renders at the line level.
+    inline_comment: bytes,
     /// An empty line.
     skip,
-    /// Like concatenation in a regex.
-    sequence: []Node,
-    /// Identical to a Sequence, but the items are stacked vertically
-    /// rather than horizontally.
-    ///
-    /// Best used when a simple Sequence would be too wide; instead, you
-    /// can break the items up into a Stack of Sequences of an appropriate
-    /// width.
-    stack: []Node,
-    /// A Sequence where every item is individually optional, but at least
-    /// one item must be chosen
-    ///optional_sequence: []Node,
-    /// Like | in a regex, puts the first item to the straight line.
-    choice: []Node,
-    /// Same as `choice` but it puts the center element in the straight line.
-    /// Requires an odd number of items, use `choice_index` when dealing with
-    /// an even number.
-    choice_middle: []Node,
-    /// Same as 'choice', but it puts the last element on the straight line.
-    /// Use `choice_index` for more fine-grained control over element positioning.
-    choice_last: []Node,
-    /// Identical to Choice, but the items are stacked horizontally rather
-    /// than vertically. There's no "straight-line" choice, so it just
-    /// takes a list of children. Best used when a simple Choice would be
-    /// too tall; instead, you can break up the items into a
-    /// HorizontalChoice of Choices of an appropriate height.
-    choice_horizontal: []Node,
-    /// Like | in a regex, takes an index for more fine-grainded control
-    /// of item positioning.
-    choice_index: ChoiceIndex,
-    /// Like `||` in a CSS grammar; it's similar to a `choice_index`, but more
-    /// than one branch can be taken.
-    multiple_choice_any: ChoiceIndex,
-    /// Like `&&` in a CSS grammar; it's similar to a `choice_index`, but all
-    /// branches must be taken at least once.
-    multiple_choice_all: ChoiceIndex,
-    /// Like `+` in a regex. The repeat argument is optional, and specifies
-    /// something that must go between the repetitions (usually a
-    /// `.comment`, but sometimes things like `.terminal(",")`, etc.)
-    one_or_more: OneOrMore,
+    /// Adds a comment label above an item.
+    label: Label,
+    /// A comment that renders above the line level. It's a shortcut for
+    /// creating a label over a skip.
+    label_path: bytes,
     /// Highlights its child with a dashed outline, and optionally labels it.
     group: Group,
+    /// A concatenation of items.
+    sequence: []Item,
+    /// Identical to a `sequence`, but the items are stacked vertically
+    /// rather than horizontally.
+    ///
+    /// Useful to break long sequences into multiple, vertically-stacked,
+    /// sub-sequences.
+    sequence_stack: []Item,
+    /// A sequence where every item is individually optional, but at least
+    /// one item must be chosen
+    sequence_optional: []Item,
+    /// An alternating sequence of two possible items.
+    sequence_alternating: AlternatingSequence,
+    /// A choce represents a branching point where only one of the listed
+    /// items chan be chosen. Puts the first item on the straight line.
+    choice: []Item,
+    /// Same as `choice` but it puts the center element on the straight line.
+    /// Requires an odd number of items.
+    ///
+    /// Use `choice_index` when dealing with an even number.
+    choice_middle: []Item,
+    /// Same as `choice`, but it puts the last element on the straight line.
+    ///
+    /// Use `choice_index` for more fine-grained control over element positioning.
+    choice_last: []Item,
+    /// Same as `choice`, but the items are stacked horizontally rather
+    /// than vertically. There's no "straight-line" choice, so it just
+    /// takes a list of children.
+    ///
+    /// Useful to split a single (tall) choice into shorter "sub-choices"
+    /// stacked horizontally.
+    choice_horizontal: []Item,
+    /// Same as `choice`, takes an index for more fine-grainded control
+    /// of item positioning.
+    choice_index: ChoiceIndex,
+    /// Expresses the ability to choose the order in which to select the
+    /// items, but implies that each item can only be used once (i.e. it
+    /// gets "consumed").
+    multiple_choice_any: ChoiceIndex,
+    /// Same as `multiple_choice_any`, but additionally requires that all
+    /// items be consumed before leaving.
+    multiple_choice_all: ChoiceIndex,
+    /// When the same item can be selected multiple times in a row.
+    repeat: Item,
+    /// Same as `repeat` but also lets you specify a separator item
+    repeat_separator: RepeatSeparator,
 
     struct Label {
         label: bytes,
-        item: Node,
+        item: Item,
     }
 
     struct ChoiceIndex {
-        /// Specifies which child is the "normal" choice and should go in
-        /// the middle.
+        /// Specifies which child is the straight-line choice in the middle.
         index: int,
-        items: []Node,
+        items: []Item,
     }
 
-    struct ZeroOrMore {
-        item: Node,
-        repeat: ?Node,
-    }
-
-    struct OneOrMore {
-        item: Node,
-        repeat: ?Node,
+    struct RepeatSeparator {
+        item: Item,
+        separator: ?Item,
     }
 
     struct Group {
         label: ?bytes,
-        item: Node,
+        item: Item,
+    }
+
+    struct AlternatingSequence {
+        first: Item,
+        second: Item,
     }
 }
