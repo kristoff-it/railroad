@@ -1,6 +1,6 @@
 .{
     .name = .railroad,
-    .version = "0.0.1",
+    .version = "0.1.0",
     .dependencies = .{
         .ziggy = .{
             .url = "git+https://github.com/kristoff-it/ziggy#8e1334d4cfa945848c1d4bcd116be4d7c4041de0",
