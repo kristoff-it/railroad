@@ -24,10 +24,12 @@ union Item {
     /// A terminal in a grammar, i.e. literal text that matches a rule.
     terminal: bytes,
     /// A reference to another production (i.e. another diagram).
-    /// The value must be the name of another diagram in this file.
+    /// The value must be the name of another diagram present in this file.
     reference: bytes,
     /// Represents an instruction or a reference to an external diagram.
     /// An example could be a reference to unicode or a list of letters.
+    /// Supports multiline strings, in which case the box will be rendered
+    /// with more padding between the text and the box.
     external: bytes,
     /// A comment that renders at the line level.
     inline_comment: bytes,
@@ -51,6 +53,10 @@ union Item {
     /// A sequence where every item is individually optional, but at least
     /// one item must be chosen
     sequence_optional: []Item,
+    /// A sequence where every prefix before the last is omissible. Put
+    /// a skip element at the end of the sequence to make the whole sequence
+    /// optional.
+    sequence_optional_prefix: []Item,
     /// An alternating sequence of two possible items.
     sequence_alternating: AlternatingSequence,
     /// A choce represents a branching point where only one of the listed

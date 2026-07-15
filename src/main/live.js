@@ -3,18 +3,22 @@ function log() {
 }
 
 let stop = false;
+let have_body = false;
 function railroadConnect() {
   log("connect");
-
-  if (stop) {
-    log("encountered error, stopping");
-    return;
-  }
-  let socket = new WebSocket("ws://" + window.location.host + "/ws");
 
   const error = document.getElementById("error");
   const status = document.querySelector(".top-bar .status");
   const status_msg = document.getElementById("status-msg");
+
+  if (stop) {
+    log("encountered error, stopping");
+    status_msg.innerText = "Disconnected";
+    status.style.fill = "#56b6c2";
+    status.style.color = "#56b6c2";
+    return;
+  }
+  let socket = new WebSocket("ws://" + window.location.host + "/ws");
 
   socket.addEventListener("open", (event) => {
     log("connected");
@@ -37,15 +41,27 @@ function railroadConnect() {
     if (command == "CSS") {
       document.getElementById("__railroad_css").innerHTML = body;
     } else if (command == "BODY") {
+      const at_bottom =
+        window.innerHeight + Math.round(window.scrollY) >=
+        document.body.offsetHeight;
+
       document.getElementById("main").innerHTML = body;
       error.innerHTML = "";
       activate();
       status_msg.innerText = "Live";
       status.style.fill = "#e5c07b";
       status.style.color = "#e5c07b";
+
+      if (at_bottom && have_body) {
+        window.scrollTo(0, document.body.scrollHeight, {
+          behavior: "smooth",
+        });
+      }
+
+      have_body = true;
     } else if (command == "ERROR") {
       error.innerHTML = "<pre>" + body + "</pre>";
-      status_msg.innerText = "Error";
+      status_msg.innerText = "Build error";
       status.style.fill = "#e06c75";
       status.style.color = "#e06c75";
     }
@@ -53,19 +69,17 @@ function railroadConnect() {
 
   socket.addEventListener("close", (event) => {
     log("close", event);
-    status_msg.innerText = "Offline";
+    status_msg.innerText = "Reconnecting";
     status.style.fill = "#56b6c2";
     status.style.color = "#56b6c2";
     setTimeout(railroadConnect, 3000);
   });
 
   socket.addEventListener("error", (event) => {
-    status_msg.innerText = "Offline";
-    status.style.fill = "#56b6c2";
-    status.style.color = "#56b6c2";
     log("error", event);
     stop = true;
   });
+
   return socket;
 }
 

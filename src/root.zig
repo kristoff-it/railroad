@@ -13,6 +13,7 @@ const padding: f64 = 20;
 const mch_extra_width = 30 + arc * 2 + 20;
 const term_char_width = 8;
 const comment_char_width = 7;
+const multi_line_height: f64 = 8;
 
 pub const RawItem = union(enum) {
     terminal: []const u8,
@@ -32,6 +33,7 @@ pub const RawItem = union(enum) {
     sequence: []Diagram.Item,
     sequence_stack: []Diagram.Item,
     sequence_optional: []Diagram.Item,
+    sequence_optional_prefix: []Diagram.Item,
     sequence_alternating: struct {
         first: *Diagram.Item,
         second: *Diagram.Item,
@@ -84,10 +86,12 @@ pub const Diagram = struct {
         kind: Kind = undefined,
 
         pub const Kind = enum {
+            control_character,
             unknown_reference,
             sequence_empty,
             sequence_stack_empty,
             sequence_optional_two,
+            sequence_optional_prefix_two,
             choice_empty,
             choice_even,
             choice_index_oob,
@@ -96,10 +100,12 @@ pub const Diagram = struct {
 
             pub fn message(k: Kind) []const u8 {
                 return switch (k) {
+                    .control_character => "newline, tab and other control character are only allowed in 'external' items",
                     .unknown_reference => "reference not found",
                     .sequence_empty => "sequence cannot be empty",
                     .sequence_stack_empty => "stack cannot be empty",
                     .sequence_optional_two => "optional sequence requires at least 2 items",
+                    .sequence_optional_prefix_two => "optional prefix sequence requires at least 2 items",
                     .choice_empty => "choice cannot be empty",
                     .choice_even => "choice_middle requires an odd number of items",
                     .choice_index_oob => "choice index out of bounds",
@@ -203,7 +209,7 @@ pub const Diagram = struct {
         const transform = if (stroke_odd_pixel_length) "translate(.5 .5)" else "";
 
         try w.print(
-            \\<svg class="railroad-diagram" viewBox="0 0 {0} {1}" xmlns="http://www.w3.org/2000/svg">
+            \\<svg class="railroad-diagram" viewBox="0 0 {0} {1}" xmlns="http://www.w3.org/2000/svg" hmlns:xlink="http://www.w3.org/1999/xlink">
             \\{2s}
             \\<g transform="{3s}">
             \\
@@ -330,17 +336,39 @@ pub const Diagram = struct {
             ld: *LayoutDiagnostic,
         ) error{Validation}!void {
             alias: switch (n.raw) {
-                .terminal, .reference, .external => |t| {
+                .terminal, .reference, .external => |text| {
                     if (n.raw == .reference) {
-                        if (!ds.fields.contains(t)) {
-                            ld.* = .{ .loc = n.loc, .kind = .unknown_reference };
+                        if (!ds.fields.contains(text)) {
+                            ld.* = .{ .kind = .unknown_reference, .loc = n.loc };
                             return error.Validation;
                         }
                     }
-                    n.width = tof64(t.len * term_char_width) + padding;
+                    if (n.raw != .external) {
+                        for (text) |byte| {
+                            if (std.ascii.isControl(byte)) {
+                                ld.* = .{ .kind = .control_character, .loc = n.loc };
+                                return error.Validation;
+                            }
+                        }
+                    }
+
+                    var lines = std.mem.splitScalar(u8, text, '\n');
+                    var count: usize = 0;
+                    while (lines.next()) |l| : (count += 1) {
+                        n.width = @max(
+                            n.width,
+                            tof64(l.len * term_char_width) + padding,
+                        );
+                    }
+
                     n.up = 11;
                     n.down = 11;
                     n.needs_space = true;
+                    if (count > 1) {
+                        n.up += multi_line_height * tof64(count);
+                        n.down += multi_line_height * tof64(count);
+                        n.width += term_char_width * 2;
+                    }
                 },
                 .label => |l| {
                     const label_width = tof64(l.label.len * comment_char_width) + padding;
@@ -364,7 +392,7 @@ pub const Diagram = struct {
                 },
                 .skip => {
                     // n.needs_space = true;
-                    // n.width = ar;
+                    n.width = arc;
                 },
                 .label_path => |label| {
                     const label_width = tof64(label.len * comment_char_width) + padding;
@@ -409,9 +437,16 @@ pub const Diagram = struct {
                     n.up = items[0].up;
                     n.down = items[items.len - 1].down;
                 },
-                .sequence_optional => |items| {
+                .sequence_optional, .sequence_optional_prefix => |items| {
                     if (items.len < 2) {
-                        ld.* = .{ .loc = n.loc, .kind = .sequence_optional_two };
+                        ld.* = .{
+                            .loc = n.loc,
+                            .kind = switch (n.raw) {
+                                else => unreachable,
+                                .sequence_optional => .sequence_optional_two,
+                                .sequence_optional_prefix => .sequence_optional_prefix_two,
+                            },
+                        };
                         return error.Validation;
                     }
 
@@ -429,14 +464,22 @@ pub const Diagram = struct {
                         if (idx > 0) {
                             n.down = @max(
                                 n.height + n.down,
-                                height_acc + @max(arc * 2, item.down + vs),
+                                height_acc + switch (n.raw) {
+                                    else => unreachable,
+                                    .sequence_optional => @max(arc * 2, item.down + vs),
+                                    .sequence_optional_prefix => item.down,
+                                },
                             ) - n.height;
                         }
                         const item_width: f64 = item.width + if (item.needs_space) tof64(10) else 0;
                         if (idx == 0) {
                             n.width += arc + @max(item_width, arc);
                         } else {
-                            n.width += arc * 2 + @max(item_width, arc) + arc;
+                            n.width += @max(item_width, arc) + arc + switch (n.raw) {
+                                else => unreachable,
+                                .sequence_optional => arc * 2,
+                                .sequence_optional_prefix => 0,
+                            };
                         }
                     }
                 },
@@ -709,10 +752,12 @@ pub const Diagram = struct {
                     try writePath(w, orig_x + gaps[0] + n.width, orig_y, &.{
                         .{ .h = gaps[1] },
                     });
+
+                    const count = std.mem.countScalar(u8, text, '\n') + 1;
                     try writeRect(
                         w,
                         orig_x + gaps[0],
-                        orig_y - 11,
+                        orig_y - 11 - if (count == 1) 0 else multi_line_height * tof64(count),
                         n.width,
                         n.up + n.down,
                         if (n.raw == .terminal) 10 else 0,
@@ -720,7 +765,20 @@ pub const Diagram = struct {
                         .{},
                     );
 
-                    try writeText(w, orig_x + gaps[0] + n.width / 2.0, orig_y + 4, text, .{});
+                    var lines = std.mem.splitScalar(u8, text, '\n');
+                    var idx: usize = 0;
+                    while (lines.next()) |l| : (idx += 1) {
+                        try writeText(
+                            w,
+                            orig_x + gaps[0] + n.width / 2.0,
+                            orig_y + 4 - if (count == 1) 0 else -2 * multi_line_height * (tof64(idx) - tof64(count - 1) / 2.0),
+                            l,
+                            .{
+                                .ref = if (n.raw == .reference) text else null,
+                            },
+                        );
+                    }
+
                     try w.writeAll(
                         \\</g>
                         \\
@@ -888,7 +946,7 @@ pub const Diagram = struct {
                         \\
                     );
                 },
-                .sequence_optional => |items| {
+                .sequence_optional, .sequence_optional_prefix => |items| {
                     try w.writeAll(
                         \\<g>
                         \\
@@ -930,6 +988,12 @@ pub const Diagram = struct {
                         // where the next element's skip needs to begin
                     }
 
+                    const arc_extra = switch (n.raw) {
+                        else => unreachable,
+                        .sequence_optional => arc * 2,
+                        .sequence_optional_prefix => 0,
+                    };
+
                     // middle items
                     for (items[1 .. items.len - 1]) |item| {
                         const item_space: f64 = if (item.needs_space) tof64(10) else 0;
@@ -937,7 +1001,7 @@ pub const Diagram = struct {
 
                         // Upper skip
                         try writePath(w, x, upper_line_y, &.{
-                            .{ .right = arc * 2 + @max(item_width, arc) + arc },
+                            .{ .right = arc_extra + @max(item_width, arc) + arc },
                             .{ .arc = .{ .n, .e } },
                             .{ .down = y - upper_line_y + item.height - arc * 2 },
                             .{ .arc = .{ .w, .s } },
@@ -951,17 +1015,22 @@ pub const Diagram = struct {
                         });
 
                         // Lower skip
-                        try writePath(w, x, y, &.{
-                            .{ .arc = .{ .n, .e } },
-                            .{ .down = item.height + @max(item.down + vs, arc * 2) - arc * 2 },
-                            .{ .arc = .{ .w, .s } },
-                            .{ .right = item_width - arc },
-                            .{ .arc = .{ .s, .e } },
-                            .{ .up = item.down + vs - arc * 2 },
-                            .{ .arc = .{ .w, .n } },
-                        });
 
-                        x += arc * 2 + @max(item_width, arc) + arc;
+                        switch (n.raw) {
+                            else => unreachable,
+                            .sequence_optional_prefix => {},
+                            .sequence_optional => try writePath(w, x, y, &.{
+                                .{ .arc = .{ .n, .e } },
+                                .{ .down = item.height + @max(item.down + vs, arc * 2) - arc * 2 },
+                                .{ .arc = .{ .w, .s } },
+                                .{ .right = item_width - arc },
+                                .{ .arc = .{ .s, .e } },
+                                .{ .up = item.down + vs - arc * 2 },
+                                .{ .arc = .{ .w, .n } },
+                            }),
+                        }
+
+                        x += arc_extra + @max(item_width, arc) + arc;
                         y += item.height;
                     }
 
@@ -981,15 +1050,19 @@ pub const Diagram = struct {
                         });
 
                         // Lower skip
-                        try writePath(w, x, y, &.{
-                            .{ .arc = .{ .n, .e } },
-                            .{ .down = item.height + @max(item.down + vs, arc * 2) - arc * 2 },
-                            .{ .arc = .{ .w, .s } },
-                            .{ .right = item_width - arc },
-                            .{ .arc = .{ .s, .e } },
-                            .{ .up = item.down + vs - arc * 2 },
-                            .{ .arc = .{ .w, .n } },
-                        });
+                        switch (n.raw) {
+                            else => unreachable,
+                            .sequence_optional_prefix => {},
+                            .sequence_optional => try writePath(w, x, y, &.{
+                                .{ .arc = .{ .n, .e } },
+                                .{ .down = item.height + @max(item.down + vs, arc * 2) - arc * 2 },
+                                .{ .arc = .{ .w, .s } },
+                                .{ .right = item_width - arc },
+                                .{ .arc = .{ .s, .e } },
+                                .{ .up = item.down + vs - arc * 2 },
+                                .{ .arc = .{ .w, .n } },
+                            }),
+                        }
                     }
 
                     try w.writeAll(
@@ -1618,8 +1691,14 @@ fn writeText(
     opts: struct {
         class: ?[]const u8 = null,
         style: ?[]const u8 = null,
+        ref: ?[]const u8 = null,
     },
 ) Io.Writer.Error!void {
+    if (opts.ref) |h| {
+        try w.print(
+            \\<a xlink:href="#{s}">
+        , .{h});
+    }
     try w.print(
         \\<text text-anchor="middle" x="{}" y="{}"
     , .{ x, y });
@@ -1634,9 +1713,9 @@ fn writeText(
         , .{c});
     }
     try w.print(
-        \\>{s}</text>
+        \\>{s}</text>{s}
         \\
-    , .{text});
+    , .{ text, if (opts.ref != null) "</a>" else "" });
 }
 
 fn writeRect(
@@ -1683,6 +1762,9 @@ fn writeCircle(
     , .{ cx, cy, r });
 }
 
+fn tou32(int: anytype) u32 {
+    return @intCast(int);
+}
 fn tof64(int: anytype) f64 {
     return @floatFromInt(int);
 }

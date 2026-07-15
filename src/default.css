@@ -27,7 +27,7 @@ svg.railroad-diagram g.external text {
     /* font-style: italic; */
 }
 svg.railroad-diagram g.reference text {
-    /* text-decoration: dashed underline; */
+    text-decoration: solid underline;
 }
 svg.railroad-diagram rect {
     stroke-width: 3;

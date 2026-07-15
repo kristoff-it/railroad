@@ -1,3 +1,4 @@
+html { scroll-padding-top: 150px; }
 body { max-width: 1000px; margin: auto; padding: 0 15px; }
 
 code[type="application/ziggy"] {

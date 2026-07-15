@@ -103,7 +103,7 @@ pub fn renderBody(
             \\<div class="content">
             \\
             \\<div class="diagram show">
-            \\<h2 class="diagram-name">{s}</h2>
+            \\<h2 id="{0s}" class="diagram-name">{s}</h2>
             \\<div class="diagram-description">{s}</div>
             \\{f}
             \\</div>

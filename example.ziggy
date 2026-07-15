@@ -1,16 +1,53 @@
 {
-    "leaves": .{
+    "table-of-contents": .{
         .delimiters = .pipes,
+        .description = 
+            \\All the example diagrams in this page. Click on a item to go
+            \\to the corresponding diagram. Also, this diagram uses "pipes"
+            \\as delimiters instead of the default dot and arrow.
+        ,
+        .body = [
+            .choice_horizontal([
+                .choice_index(.{
+                    .index = 2,
+                    .items = [
+                        .reference("leaves"),
+                        .reference("sequence"),
+                        .reference("sequence-stack"),
+                        .reference("sequence-optional"),
+                        .reference("sequence-optional-prefix"),
+                        .reference("sequence-alternating"),
+                    ],
+                }),
+                .choice_index(.{
+                    .index = 2,
+                    .items = [
+                        .reference("decorations"),
+                        .reference("repeat"),
+                        .reference("choice-simple"),
+                        .reference("choice-horizontal"),
+                        .reference("multiple-choice"),
+                        .reference("complex-example"),
+                    ],
+                }),
+            ]),
+        ],
+    },
+    "leaves": .{
         .description = 
             \\These are the leaf (non-container) elements that you can
             \\place in a railroad diagram. One, 'skip', is not visible by
             \\itself, but you will be able to see it when used in a choice
-            \\container. Lastly, this diagram uses "pipes" as delimiters
-            \\instead of the default dot and arrow.
+            \\container.
         ,
         .body = [
             .terminal("terminal"),
-            .external("non-terminal"),
+            .reference("leaves"),
+            .external("external"),
+            .external(
+                \\exernal with
+                \\multiline text
+),
             .inline_comment("inline comment"),
             .label_path("labeled path"),
             .skip,
@@ -66,6 +103,19 @@
         ,
         .body = [
             .sequence_optional([
+                .terminal("rail"),
+                .external("road"),
+                .terminal("diagram"),
+            ]),
+        ],
+    },
+    "sequence-optional-prefix": .{
+        .description = 
+            \\ A sequence where every item is individually optional, but at
+            \\ least one item must be chosen.
+        ,
+        .body = [
+            .sequence_optional_prefix([
                 .terminal("rail"),
                 .external("road"),
                 .terminal("diagram"),
