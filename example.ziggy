@@ -11,7 +11,7 @@
                 .choice_index(.{
                     .index = 2,
                     .items = [
-                        .reference("leaves"),
+                        .reference("leafs"),
                         .reference("sequence"),
                         .reference("sequence-stack"),
                         .reference("sequence-optional"),
@@ -33,7 +33,7 @@
             ]),
         ],
     },
-    "leaves": .{
+    "leafs": .{
         .description = 
             \\These are the leaf (non-container) elements that you can
             \\place in a railroad diagram. One, 'skip', is not visible by
@@ -42,7 +42,7 @@
         ,
         .body = [
             .terminal("terminal"),
-            .reference("leaves"),
+            .reference("leafs"),
             .external("external"),
             .external(
                 \\exernal with
