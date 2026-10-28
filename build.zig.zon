@@ -1,19 +1,20 @@
 .{
     .name = .railroad,
     .version = "0.1.0",
+    .minimum_zig_version = "0.17.0",
+    .fingerprint = 0x612bd1a692efe01b,
     .dependencies = .{
         .ziggy = .{
-            .url = "git+https://github.com/kristoff-it/ziggy#8e1334d4cfa945848c1d4bcd116be4d7c4041de0",
-            .hash = "ziggy-0.2.0-kTg8v-DxBwDNFmH93b074MhakI001VdGl2CUxKJchUtR",
+            .url = "git+https://github.com/kristoff-it/ziggy#7fc62a537ba3e3a84287025b5b794e0cfaadef2f",
+            .hash = "ziggy-0.3.0-kTg8v_OsCAAdLrIXVYVI-z4bNEm5bBy_m13uu4Uy_2mb",
         },
         .nightwatch = .{
             .url = "git+https://github.com/kristoff-it/nightwatch?ref=fixes#c6db9e1ee67e9beb8a2555a74d1959f76f25b3f1",
             .hash = "nightwatch-1.0.0-uXzeH02gAgA1UT0Fy-Str3wMW71Cq_QCn_peHH1JMp1f",
         },
     },
-    .minimum_zig_version = "0.17.0-dev.857+2b2b85c5f",
-    .fingerprint = 0x612bd1a692efe01b,
     .paths = .{
+        ".ziggy-schema",
         "build.zig",
         "build.zig.zon",
         "src",

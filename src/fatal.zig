@@ -4,7 +4,7 @@ const builtin = @import("builtin");
 
 pub fn msg(comptime fmt: []const u8, args: anytype) noreturn {
     std.debug.print("error: " ++ fmt ++ "\n", args);
-    if (builtin.mode == .Debug) panic("\n\n(debug stack trace)\n", .{});
+    if (builtin.mode == .debug) panic("\n\n(debug stack trace)\n", .{});
     std.process.exit(1);
 }
 
